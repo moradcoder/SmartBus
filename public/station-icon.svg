@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="stationGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#d97706;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Toit de la station -->
+  <path d="M 8 24 L 32 10 L 56 24" fill="url(#stationGrad)" stroke="#92400e" stroke-width="1.5"/>
+  
+  <!-- Piliers -->
+  <rect x="14" y="24" width="4" height="20" fill="#92400e" stroke="#78350f" stroke-width="1"/>
+  <rect x="46" y="24" width="4" height="20" fill="#92400e" stroke="#78350f" stroke-width="1"/>
+  
+  <!-- Panneau de la station -->
+  <rect x="22" y="36" width="20" height="10" rx="2" ry="2" fill="#fef3c7" stroke="#92400e" stroke-width="1.5"/>
+  <text x="32" y="43" font-family="Arial, sans-serif" font-size="8" font-weight="bold" text-anchor="middle" fill="#92400e">STATION</text>
+  
+  <!-- Banc -->
+  <rect x="24" y="46" width="6" height="2" rx="1" fill="#78350f"/>
+  <rect x="34" y="46" width="6" height="2" rx="1" fill="#78350f"/>
+  
+  <!-- Poteau d'éclairage -->
+  <rect x="8" y="14" width="2" height="12" fill="#78350f"/>
+  <circle cx="9" cy="13" r="3" fill="#fef08a" opacity="0.8"/>
+  
+  <!-- Panneau d'information -->
+  <rect x="4" y="30" width="6" height="8" rx="1" fill="#fef3c7" stroke="#92400e" stroke-width="0.8"/>
+  
+  <!-- Marche -->
+  <rect x="10" y="44" width="44" height="2" rx="1" fill="#d1d5db" stroke="#9ca3af" stroke-width="0.5"/>
+  
+  <!-- Signalisation -->
+  <rect x="52" y="28" width="6" height="4" rx="1" fill="#ef4444"/>
+  <rect x="52" y="34" width="6" height="4" rx="1" fill="#10b981"/>
+  
+  <!-- Drapeau -->
+  <rect x="38" y="14" width="1" height="10" fill="#78350f"/>
+  <rect x="39" y="14" width="6" height="4" fill="#ef4444"/>
+  
+  <!-- Bus à l'arrêt -->
+  <rect x="12" y="52" width="16" height="6" rx="1" fill="#3b82f6" opacity="0.6"/>
+  <circle cx="16" cy="58" r="2" fill="#1f2937" opacity="0.6"/>
+  <circle cx="22" cy="58" r="2" fill="#1f2937" opacity="0.6"/>
+</svg>
