@@ -1,19 +1,46 @@
-// app/api/admin/drivers/route.ts - النسخة النهائية
+// app/api/admin/drivers/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { supabase } from '@/lib/supabase/client';
 
+// ============================================
+// TYPES
+// ============================================
+interface AuthUser {
+  id: string;
+  email: string;
+  user_metadata?: {
+    full_name?: string;
+    phone?: string;
+    role?: string;
+  };
+  created_at?: string;
+}
+
+// ============================================
+// FONCTIONS UTILITAIRES
+// ============================================
 function isValidEmail(email: string): boolean {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 }
 
+function isValidPhone(phone: string): boolean {
+  const phoneRegex = /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/;
+  return phoneRegex.test(phone);
+}
+
+// ============================================
+// API ROUTE - POST
+// ============================================
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { name, email, password, license_number, phone, status } = body;
 
-    // التحقق من البيانات
+    // ============================================
+    // 1. ✅ VALIDATION DES DONNÉES
+    // ============================================
     if (!name || name.trim().length < 2) {
       return NextResponse.json(
         { error: 'الاسم يجب أن يحتوي على حرفين على الأقل' },
@@ -35,28 +62,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (phone && !isValidPhone(phone)) {
+      return NextResponse.json(
+        { error: 'رقم الهاتف غير صحيح' },
+        { status: 400 }
+      );
+    }
+
     console.log('📝 Creating/Updating driver:', { name, email });
 
     // ============================================
-    // 1. 🔍 البحث عن المستخدم
+    // 2. 🔍 RECHERCHE DE L'UTILISATEUR
     // ============================================
-    
-    // 1a. البحث في user_profiles
+    let userId: string | null = null;
+
+    // 2a. Recherche dans user_profiles
     const { data: existingProfile } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('email', email)
       .maybeSingle();
 
-    let userId: string | null = null;
-
     if (existingProfile) {
-      // ====== المستخدم موجود ======
       userId = existingProfile.id;
       console.log('👤 Profile exists:', { id: userId, role: existingProfile.role });
 
-      // تحديث الدور
-      await supabase
+      const { error: updateProfileError } = await supabase
         .from('user_profiles')
         .update({
           role: 'driver',
@@ -66,112 +97,36 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', userId);
 
-    } else {
-      // ====== 1b. البحث في auth.users ======
-      const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers();
-      const existingAuthUser = authUsers?.users?.find(u => u.email === email);
+      if (updateProfileError) {
+        console.error('❌ Update profile error:', updateProfileError);
+        return NextResponse.json(
+          { error: 'Erreur mise à jour profil: ' + updateProfileError.message },
+          { status: 500 }
+        );
+      }
+      console.log('✅ Profile updated successfully');
+    }
+
+    // 2b. Recherche dans auth.users
+    if (!userId) {
+      const { data: authUsers, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+
+      if (listError) {
+        console.error('❌ Auth list error:', listError);
+        return NextResponse.json(
+          { error: 'Erreur liste auth: ' + listError.message },
+          { status: 500 }
+        );
+      }
+
+      const users = (authUsers?.users as AuthUser[]) || [];
+      const existingAuthUser = users.find((u: AuthUser) => u.email === email);
 
       if (existingAuthUser) {
-        // ====== موجود في auth فقط ======
         userId = existingAuthUser.id;
         console.log('👤 Auth user exists:', userId);
 
-        // محاولة إنشاء profile
-        const { error: insertError } = await supabase
-          .from('user_profiles')
-          .insert({
-            id: userId,
-            email: email.trim(),
-            full_name: name.trim(),
-            phone: phone || null,
-            role: 'driver',
-            created_at: new Date().toISOString(),
-          });
-
-        if (insertError) {
-          if (insertError.code === '23505') {
-            // 🔑 إذا كان هناك مفتاح مكرر، جلب الـ profile الموجود
-            console.log('🔄 Duplicate key, fetching existing profile...');
-            const { data: profile } = await supabase
-              .from('user_profiles')
-              .select('*')
-              .eq('id', userId)
-              .maybeSingle();
-
-            if (profile) {
-              console.log('✅ Found existing profile:', profile);
-              // تحديث الـ profile الموجود
-              await supabase
-                .from('user_profiles')
-                .update({
-                  role: 'driver',
-                  full_name: name.trim(),
-                  phone: phone || null,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', userId);
-            } else {
-              // إذا لم نجد profile، نحاول إنشاءه باستخدام ON CONFLICT
-              // يمكننا استخدام upsert
-              const { error: upsertError } = await supabase
-                .from('user_profiles')
-                .upsert({
-                  id: userId,
-                  email: email.trim(),
-                  full_name: name.trim(),
-                  phone: phone || null,
-                  role: 'driver',
-                  created_at: new Date().toISOString(),
-                });
-
-              if (upsertError) {
-                console.error('❌ Upsert error:', upsertError);
-                return NextResponse.json(
-                  { error: 'Erreur upsert: ' + upsertError.message },
-                  { status: 500 }
-                );
-              }
-              console.log('✅ Profile upserted successfully');
-            }
-          } else {
-            console.error('❌ Insert error:', insertError);
-            return NextResponse.json(
-              { error: 'Erreur insert: ' + insertError.message },
-              { status: 500 }
-            );
-          }
-        } else {
-          console.log('✅ Profile created successfully');
-        }
-
-      } else {
-        // ====== مستخدم جديد بالكامل ======
-        console.log('👤 Creating new user...');
-        
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-          email: email.trim(),
-          password: password,
-          email_confirm: true,
-          user_metadata: {
-            full_name: name.trim(),
-            phone: phone || null,
-            role: 'driver',
-          },
-        });
-
-        if (authError) {
-          console.error('❌ Auth error:', authError);
-          return NextResponse.json(
-            { error: authError.message },
-            { status: 400 }
-          );
-        }
-
-        userId = authData.user.id;
-        console.log('✅ User created:', userId);
-
-        // 🔑 استخدام upsert لتجنب مشكلة المفتاح المكرر
-        const { error: upsertError } = await supabase
+        const { error: insertProfileError } = await supabase
           .from('user_profiles')
           .upsert({
             id: userId,
@@ -180,39 +135,94 @@ export async function POST(request: NextRequest) {
             phone: phone || null,
             role: 'driver',
             created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           });
 
-        if (upsertError) {
-          console.error('❌ Upsert error:', upsertError);
-          await supabaseAdmin.auth.admin.deleteUser(userId);
+        if (insertProfileError) {
+          console.error('❌ Insert profile error:', insertProfileError);
           return NextResponse.json(
-            { error: 'Erreur upsert: ' + upsertError.message },
+            { error: 'Erreur création profil: ' + insertProfileError.message },
             { status: 500 }
           );
         }
-        console.log('✅ Profile upserted successfully');
+        console.log('✅ Profile created successfully');
       }
     }
 
+    // 2c. Création d'un nouvel utilisateur
     if (!userId) {
-      throw new Error('User ID is null!');
+      console.log('👤 Creating new user...');
+      
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email: email.trim(),
+        password: password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: name.trim(),
+          phone: phone || null,
+          role: 'driver',
+        },
+      });
+
+      if (authError) {
+        console.error('❌ Auth create error:', authError);
+        return NextResponse.json(
+          { error: authError.message },
+          { status: 400 }
+        );
+      }
+
+      if (!authData?.user) {
+        return NextResponse.json(
+          { error: 'فشل إنشاء المستخدم' },
+          { status: 500 }
+        );
+      }
+
+      userId = authData.user.id;
+      console.log('✅ User created:', userId);
+
+      const { error: insertProfileError } = await supabase
+        .from('user_profiles')
+        .upsert({
+          id: userId,
+          email: email.trim(),
+          full_name: name.trim(),
+          phone: phone || null,
+          role: 'driver',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+      if (insertProfileError) {
+        console.error('❌ Insert profile error:', insertProfileError);
+        await supabaseAdmin.auth.admin.deleteUser(userId);
+        return NextResponse.json(
+          { error: 'Erreur création profil: ' + insertProfileError.message },
+          { status: 500 }
+        );
+      }
+      console.log('✅ Profile created successfully');
     }
 
     // ============================================
-    // 3. 🚌 إنشاء/تحديث السائق
+    // 3. 🚌 GESTION DU CHAUFFEUR
     // ============================================
-    
-    // البحث عن السائق
+    if (!userId) {
+      throw new Error('❌ User ID is null!');
+    }
+
     const { data: existingDriver } = await supabase
       .from('drivers')
       .select('*')
       .eq('user_id', userId)
       .maybeSingle();
 
-    let newDriver;
+    let driver;
 
     if (existingDriver) {
-      // تحديث سائق موجود
+      console.log('🚌 Updating existing driver:', existingDriver.id);
+      
       const { data: updatedDriver, error: updateDriverError } = await supabase
         .from('drivers')
         .update({
@@ -233,10 +243,13 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
-      newDriver = updatedDriver;
+      driver = updatedDriver;
+      console.log('✅ Driver updated successfully');
+
     } else {
-      // إنشاء سائق جديد
-      const { data: createdDriver, error: driverError } = await supabase
+      console.log('🚌 Creating new driver...');
+      
+      const { data: newDriver, error: createDriverError } = await supabase
         .from('drivers')
         .insert({
           name: name.trim(),
@@ -245,48 +258,54 @@ export async function POST(request: NextRequest) {
           phone: phone || null,
           status: status || 'off_duty',
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .select()
         .single();
 
-      if (driverError) {
-        console.error('❌ Driver creation error:', driverError);
+      if (createDriverError) {
+        console.error('❌ Create driver error:', createDriverError);
         return NextResponse.json(
-          { error: 'Erreur création chauffeur: ' + driverError.message },
+          { error: 'Erreur création chauffeur: ' + createDriverError.message },
           { status: 500 }
         );
       }
-      newDriver = createdDriver;
+      driver = newDriver;
+      console.log('✅ Driver created successfully');
     }
 
     // ============================================
-    // 4. 🔗 ربط driver_id
+    // 4. 🔗 MISE À JOUR DU LIEN driver_id
     // ============================================
-    await supabase
-      .from('user_profiles')
-      .update({
-        driver_id: newDriver.id,
-        role: 'driver',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId);
+    if (driver) {
+      await supabase
+        .from('user_profiles')
+        .update({
+          driver_id: driver.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId);
+      console.log('✅ Profile linked to driver');
+    }
 
     // ============================================
-    // 5. 🔍 التحقق النهائي
+    // 5. 📤 RÉPONSE
     // ============================================
-    const { data: finalProfile } = await supabase
-      .from('user_profiles')
-      .select('id, email, full_name, role, driver_id, created_at')
-      .eq('id', userId)
-      .single();
-
-    console.log('✅ Final profile:', finalProfile);
-
     return NextResponse.json({
       success: true,
-      driver: newDriver,
-      profile: finalProfile,
-      message: 'تم إضافة السائق بنجاح'
+      driver: {
+        id: driver.id,
+        name: driver.name,
+        user_id: driver.user_id,
+        license_number: driver.license_number,
+        phone: driver.phone,
+        status: driver.status,
+        created_at: driver.created_at,
+        updated_at: driver.updated_at,
+      },
+      message: existingDriver 
+        ? 'تم تحديث السائق بنجاح' 
+        : 'تم إضافة السائق بنجاح'
     });
 
   } catch (error: any) {
@@ -294,8 +313,130 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: error.message || 'حدث خطأ أثناء إضافة السائق',
-        details: error.stack
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
       },
+      { status: 500 }
+    );
+  }
+}
+
+// ============================================
+// API ROUTE - GET
+// ============================================
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const email = searchParams.get('email');
+
+    if (id) {
+      const { data: driver, error } = await supabase
+        .from('drivers')
+        .select('*, user_profiles(*)')
+        .eq('id', id)
+        .single();
+
+      if (error) {
+        return NextResponse.json(
+          { error: 'Chauffeur non trouvé' },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({ driver });
+    }
+
+    if (email) {
+      const { data: driver, error } = await supabase
+        .from('drivers')
+        .select('*, user_profiles(*)')
+        .eq('user_profiles.email', email)
+        .single();
+
+      if (error) {
+        return NextResponse.json(
+          { error: 'Chauffeur non trouvé' },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({ driver });
+    }
+
+    const { data: drivers, error } = await supabase
+      .from('drivers')
+      .select('*, user_profiles(*)')
+      .order('name', { ascending: true });
+
+    if (error) {
+      return NextResponse.json(
+        { error: 'Erreur récupération chauffeurs' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ drivers });
+
+  } catch (error: any) {
+    console.error('❌ GET Error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Erreur lors de la récupération' },
+      { status: 500 }
+    );
+  }
+}
+
+// ============================================
+// API ROUTE - DELETE
+// ============================================
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'ID du chauffeur requis' },
+        { status: 400 }
+      );
+    }
+
+    const { data: driver } = await supabase
+      .from('drivers')
+      .select('user_id')
+      .eq('id', id)
+      .single();
+
+    const { error: deleteDriverError } = await supabase
+      .from('drivers')
+      .delete()
+      .eq('id', id);
+
+    if (deleteDriverError) {
+      return NextResponse.json(
+        { error: 'Erreur suppression chauffeur' },
+        { status: 500 }
+      );
+    }
+
+    if (driver?.user_id) {
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(driver.user_id);
+        console.log('✅ Auth user deleted:', driver.user_id);
+      } catch (authError) {
+        console.warn('⚠️ Could not delete auth user:', driver.user_id);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Chauffeur supprimé avec succès'
+    });
+
+  } catch (error: any) {
+    console.error('❌ DELETE Error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Erreur lors de la suppression' },
       { status: 500 }
     );
   }

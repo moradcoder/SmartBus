@@ -48,7 +48,7 @@ export function Footer() {
             <h3 className="mb-3 text-sm font-semibold">{t.contact.title}</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li className="flex items-center gap-2"><MapPin className="h-4 w-4" /> {locale === 'ar' ? 'ورزازات، المغرب' : 'Ouarzazate, Maroc'}</li>
-              <li className="flex items-center gap-2"><Phone className="h-4 w-4" /> +212 524 000 000</li>
+              <li className="flex items-center gap-2"><Phone className="h-4 w-4" /> 0628708074</li>
               <li className="flex items-center gap-2"><Mail className="h-4 w-4" /> contact@smartbus.ma</li>
             </ul>
           </div>

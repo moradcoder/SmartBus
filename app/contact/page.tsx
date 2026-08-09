@@ -34,7 +34,7 @@ export default function ContactPage() {
 
   const contactInfo = [
     { icon: MapPin, label: t.contact.address, value: locale === 'ar' ? 'ورزازات، المغرب' : 'Ouarzazate, Maroc' },
-    { icon: Phone, label: t.contact.phone, value: '+212 524 000 000' },
+    { icon: Phone, label: t.contact.phone, value: '0628708074' },
     { icon: Mail, label: t.contact.email, value: 'contact@smartbus.ma' },
     { icon: Clock, label: t.contact.hours, value: t.contact.hoursValue },
   ];

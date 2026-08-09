@@ -1,3 +1,5 @@
+// components/layout/header.tsx - تحديث القسم
+
 'use client';
 
 import Link from 'next/link';
@@ -30,6 +32,7 @@ export function Header() {
 
   const role = profile?.role;
 
+  // ✅ عناصر القائمة حسب الدور
   const navItems = [
     { href: '/', label: t.nav.home, icon: Bus, roles: null },
     { href: '/map', label: t.nav.map, icon: MapPin, roles: null },
@@ -39,7 +42,7 @@ export function Header() {
     { href: '/contact', label: t.nav.contact, icon: Phone, roles: null },
     { href: '/about', label: t.nav.about, icon: Info, roles: null },
     { href: '/driver', label: t.nav.driver, icon: Car, roles: ['driver'] },
-    { href: '/admin', label: t.nav.admin, icon: LayoutDashboard, roles: ['admin'] },
+    { href: '/admin', label: t.nav.admin, icon: LayoutDashboard, roles: ['admin', 'super_admin'] },
   ].filter((item) => item.roles === null || (role && item.roles.includes(role)));
 
   const isActive = (href: string) => {
@@ -52,6 +55,9 @@ export function Header() {
     router.push('/');
   };
 
+  // ✅ عرض اسم المستخدم أو البريد الإلكتروني
+  const displayName = profile?.full_name || profile?.email || '';
+
   return (
     <header
       className={cn(
@@ -61,6 +67,7 @@ export function Header() {
     >
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
+          {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/30">
               <Bus className="h-5 w-5" />
@@ -73,6 +80,7 @@ export function Header() {
             </div>
           </Link>
 
+          {/* Navigation */}
           <nav className="hidden items-center gap-1 lg:flex">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -94,6 +102,7 @@ export function Header() {
             })}
           </nav>
 
+          {/* Actions */}
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
@@ -117,12 +126,15 @@ export function Header() {
               </Button>
             )}
 
+            {/* ✅ عرض معلومات المستخدم */}
             {profile ? (
               <div className="hidden items-center gap-1 sm:flex">
                 <Link href="/profile">
                   <Button variant="ghost" size="sm" className="gap-1.5">
                     <User className="h-4 w-4" />
-                    <span className="max-w-[80px] truncate">{profile.full_name || profile.email}</span>
+                    <span className="max-w-[100px] truncate font-medium">
+                      {displayName}
+                    </span>
                   </Button>
                 </Link>
                 <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-9 w-9" title={t.nav.logout}>
@@ -138,6 +150,7 @@ export function Header() {
               </Link>
             )}
 
+            {/* Menu Mobile */}
             <Button
               variant="ghost"
               size="icon"
@@ -150,6 +163,7 @@ export function Header() {
         </div>
       </div>
 
+      {/* Mobile Menu */}
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
@@ -187,7 +201,7 @@ export function Header() {
                     className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted"
                   >
                     <User className="h-4 w-4" />
-                    {t.nav.profile}
+                    {displayName}
                   </Link>
                   <button
                     onClick={() => { handleSignOut(); setMobileOpen(false); }}

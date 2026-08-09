@@ -10,7 +10,7 @@ import {
   WifiOff, BarChart3, Shield, Globe, Smartphone 
 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n-context';
-import { useStats, useLines, useAnnouncements } from '@/hooks/use-data';
+import { useStats, useAnnouncements } from '@/hooks/use-data';
 import { supabase } from '@/lib/supabase/client';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,13 +19,18 @@ import { Badge } from '@/components/ui/badge';
 export default function HomePage() {
   const { t, locale, dir } = useI18n();
   const { stats } = useStats();
-  const { lines: hookLines } = useLines();
   const { announcements } = useAnnouncements();
   const Arrow = dir === 'rtl' ? ArrowLeft : ArrowRight;
 
   // ✅ جلب المحطات مباشرة من قاعدة البيانات
   const [stations, setStations] = useState([]);
   const [loadingStations, setLoadingStations] = useState(true);
+  
+  // ✅ جلب الخطوط مباشرة من قاعدة البيانات
+  const [lines, setLines] = useState([]);
+  const [loadingLines, setLoadingLines] = useState(true);
+  
+  // ✅ إحصائيات
   const [totalStations, setTotalStations] = useState(0);
   const [activeBuses, setActiveBuses] = useState(0);
   const [totalLines, setTotalLines] = useState(0);
@@ -58,14 +63,21 @@ export default function HomePage() {
         const { data: linesData, count: linesCount } = await supabase
           .from('lines')
           .select('*', { count: 'exact' })
-          .eq('status', 'active');
+          .eq('status', 'active')
+          .order('number');
 
-        setTotalLines(linesCount || linesData?.length || 0);
+        console.log('✅ Lines fetched:', linesData);
+
+        if (linesData) {
+          setLines(linesData);
+          setTotalLines(linesCount || linesData.length || 0);
+        }
 
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
         setLoadingStations(false);
+        setLoadingLines(false);
       }
     };
 
@@ -97,7 +109,10 @@ export default function HomePage() {
   const featuredStations = stations.slice(0, 6);
 
   // ✅ عرض الخطوط النشطة
-  const activeLines = hookLines?.filter(line => line.status === 'active') || [];
+  const activeLines = lines || [];
+
+  console.log('✅ Active lines count:', activeLines.length);
+  console.log('✅ Lines data:', lines);
 
   return (
     <div className="flex flex-col">
@@ -139,7 +154,7 @@ export default function HomePage() {
             </div>
           </motion.div>
 
-          {/* ✅ Stats - عرض الأعداد الصحيحة */}
+          {/* Stats */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -162,7 +177,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ✅ قسم الخطوط المميزة */}
+      {/* ✅ قسم الخطوط المميزة - بدون روابط */}
       <section className="py-12 bg-card/30">
         <div className="container mx-auto px-4">
           <div className="mb-8 flex items-center justify-between">
@@ -175,15 +190,19 @@ export default function HomePage() {
                 {locale === 'ar' ? 'اختر خطك المفضل للتنقل' : 'Choisissez votre ligne préférée'}
               </p>
             </div>
-            <Link href="/lines">
-              <Button variant="ghost" className="gap-1 text-primary">
-                {t.home.viewAll}
-                <Arrow className="h-4 w-4" />
-              </Button>
-            </Link>
+            {/* ✅ تم إزالة زر "عرض الكل" */}
           </div>
 
-          {activeLines.length === 0 ? (
+          {loadingLines ? (
+            <div className="text-center py-8">
+              <div className="animate-pulse flex justify-center">
+                <div className="w-12 h-12 rounded-full bg-muted"></div>
+              </div>
+              <p className="text-muted-foreground mt-2">
+                {locale === 'ar' ? 'جاري تحميل الخطوط...' : 'Chargement des lignes...'}
+              </p>
+            </div>
+          ) : activeLines.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <Route className="h-12 w-12 mx-auto text-muted-foreground/30 mb-2" />
               <p>{locale === 'ar' ? 'لا توجد خطوط متاحة حالياً' : 'Aucune ligne disponible'}</p>
@@ -198,30 +217,29 @@ export default function HomePage() {
                   viewport={{ once: true }}
                   transition={{ duration: 0.3, delay: i * 0.05 }}
                 >
-                  <Link href={`/lines/${line.id}`}>
-                    <Card className="group h-full cursor-pointer p-4 transition-all hover:shadow-lg hover:-translate-y-1">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="flex h-12 w-12 items-center justify-center rounded-xl text-white font-bold text-lg flex-shrink-0"
-                          style={{ backgroundColor: line.color || '#3B82F6' }}
-                        >
-                          {line.number}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-sm truncate">
-                            {locale === 'ar' ? line.name_ar : line.name_fr}
-                          </div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1">
-                            <MapPin className="h-3 w-3" />
-                            {line.waypoints?.length || 0} {locale === 'ar' ? 'محطة' : 'stations'}
-                          </div>
-                        </div>
-                        <Badge variant="default" className="flex-shrink-0">
-                          {locale === 'ar' ? 'نشط' : 'Actif'}
-                        </Badge>
+                  {/* ✅ إزالة Link - عرض البطاقة فقط */}
+                  <Card className="group h-full cursor-default p-4 transition-all hover:shadow-lg hover:-translate-y-1">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="flex h-12 w-12 items-center justify-center rounded-xl text-white font-bold text-lg flex-shrink-0"
+                        style={{ backgroundColor: line.color || '#3B82F6' }}
+                      >
+                        {line.number}
                       </div>
-                    </Card>
-                  </Link>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">
+                          {locale === 'ar' ? line.name_ar : line.name_fr}
+                        </div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {line.waypoints?.length || 0} {locale === 'ar' ? 'محطة' : 'stations'}
+                        </div>
+                      </div>
+                      <Badge variant="default" className="flex-shrink-0">
+                        {locale === 'ar' ? 'نشط' : 'Actif'}
+                      </Badge>
+                    </div>
+                  </Card>
                 </motion.div>
               ))}
             </div>
@@ -229,7 +247,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ✅ قسم المحطات المميزة */}
+      {/* ✅ قسم المحطات الرئيسية - بدون روابط */}
       <section className="py-12">
         <div className="container mx-auto px-4">
           <div className="mb-8 flex items-center justify-between">
@@ -242,12 +260,7 @@ export default function HomePage() {
                 {locale === 'ar' ? 'اكتشف المحطات الرئيسية في المدينة' : 'Découvrez les principales stations'}
               </p>
             </div>
-            <Link href="/stations">
-              <Button variant="ghost" className="gap-1 text-primary">
-                {t.home.viewAll}
-                <Arrow className="h-4 w-4" />
-              </Button>
-            </Link>
+            {/* ✅ تم إزالة زر "عرض الكل" */}
           </div>
 
           {loadingStations ? (
@@ -255,7 +268,9 @@ export default function HomePage() {
               <div className="animate-pulse flex justify-center">
                 <div className="w-12 h-12 rounded-full bg-muted"></div>
               </div>
-              <p className="text-muted-foreground mt-2">{locale === 'ar' ? 'جاري تحميل المحطات...' : 'Chargement des stations...'}</p>
+              <p className="text-muted-foreground mt-2">
+                {locale === 'ar' ? 'جاري تحميل المحطات...' : 'Chargement des stations...'}
+              </p>
             </div>
           ) : stations.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
@@ -272,34 +287,39 @@ export default function HomePage() {
                   viewport={{ once: true }}
                   transition={{ duration: 0.3, delay: i * 0.05 }}
                 >
-                  <Link href={`/stations/${station.id}`}>
-                    <Card className="group h-full cursor-pointer p-4 transition-all hover:shadow-lg hover:-translate-y-1">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary flex-shrink-0">
-                          {station.type === 'bus' ? '🚌' : station.type === 'tram' ? '🚋' : '🚆'}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-sm truncate">
-                            {locale === 'ar' ? station.name_ar : station.name_fr}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {locale === 'ar' ? station.address_ar : station.address_fr || (locale === 'ar' ? 'بدون عنوان' : 'Sans adresse')}
-                          </div>
-                          {station.line && (
-                            <div className="flex items-center gap-1 mt-1">
-                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: station.line.color || '#3B82F6' }} />
-                              <span className="text-xs text-muted-foreground">
-                                {station.line.number} - {locale === 'ar' ? station.line.name_ar : station.line.name_fr}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                        <Badge variant="default" className="flex-shrink-0 text-[10px]">
-                          {station.type === 'bus' ? '🚌' : station.type === 'tram' ? '🚋' : '🚆'}
-                        </Badge>
+                  {/* ✅ إزالة Link - عرض البطاقة فقط */}
+                  <Card className="group h-full cursor-default p-4 transition-all hover:shadow-lg hover:-translate-y-1">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary flex-shrink-0">
+                        {station.type === 'bus' ? '🚌' : station.type === 'tram' ? '🚋' : '🚆'}
                       </div>
-                    </Card>
-                  </Link>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm truncate">
+                          {locale === 'ar' ? station.name_ar : station.name_fr}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {locale === 'ar' 
+                            ? (station.address_ar || 'بدون عنوان') 
+                            : (station.address_fr || 'Sans adresse')
+                          }
+                        </div>
+                        {station.line && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <span 
+                              className="w-2 h-2 rounded-full" 
+                              style={{ backgroundColor: station.line.color || '#3B82F6' }} 
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {station.line.number} - {locale === 'ar' ? station.line.name_ar : station.line.name_fr}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                      <Badge variant="default" className="flex-shrink-0 text-[10px]">
+                        {station.type === 'bus' ? '🚌' : station.type === 'tram' ? '🚋' : '🚆'}
+                      </Badge>
+                    </div>
+                  </Card>
                 </motion.div>
               ))}
             </div>
@@ -391,18 +411,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Latest News */}
+      {/* Latest News - بدون رابط */}
       {announcements && announcements.length > 0 && (
         <section className="border-t border-border/40 bg-card/30 py-16">
           <div className="container mx-auto px-4">
             <div className="mb-8 flex items-center justify-between">
               <h2 className="text-2xl font-bold md:text-3xl">{t.home.latestNews}</h2>
-              <Link href="/news">
-                <Button variant="ghost" className="gap-1 text-primary">
-                  {t.home.viewAll}
-                  <Arrow className="h-4 w-4" />
-                </Button>
-              </Link>
+              {/* ✅ تم إزالة زر "عرض الكل" */}
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {announcements.slice(0, 3).map((ann, i) => (

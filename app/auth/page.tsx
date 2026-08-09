@@ -84,6 +84,8 @@ export default function AuthPage() {
               email: email,
               full_name: fullName,
               role: 'customer',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             });
 
           if (profileError) {
@@ -103,6 +105,8 @@ export default function AuthPage() {
         setError(t.auth?.invalidCreds || 'البريد الإلكتروني أو كلمة المرور غير صحيحة');
       } else if (err.message?.includes('User already registered')) {
         setError(t.auth?.emailExists || 'هذا البريد الإلكتروني مسجل بالفعل');
+      } else if (err.message?.includes('Email not confirmed')) {
+        setError(t.auth?.emailNotConfirmed || 'يرجى تأكيد بريدك الإلكتروني أولاً');
       } else {
         setError(err.message || 'حدث خطأ أثناء تسجيل الدخول');
       }

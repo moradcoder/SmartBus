@@ -19,70 +19,176 @@ import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import L from 'leaflet';
 import 'leaflet-routing-machine';
 
-// Fix Leaflet default marker icons
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+// ============================================
+// ✅ FIX: Leaflet marker icons - Version corrigée
+// ============================================
 
-// Dynamically import Leaflet components
+// ✅ Supprimer _getIconUrl de manière sécurisée
+if (typeof window !== 'undefined') {
+  try {
+    // Essayer la méthode moderne (v1.7+)
+    const iconPrototype = L.Icon.Default.prototype as any;
+    if (iconPrototype._getIconUrl) {
+      delete iconPrototype._getIconUrl;
+    }
+    
+    // Configurer les nouvelles icônes
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+      iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    });
+  } catch (error) {
+    console.warn('Leaflet icon fix warning:', error);
+  }
+}
+
+// ✅ Créer une icône personnalisée pour les marqueurs
+const createCustomIcon = (color: string = '#3b82f6') => {
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `<div style="
+      background-color: ${color};
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 3px solid white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: white;
+      font-weight: bold;
+    "></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
+  });
+};
+
+// ✅ Icône pour les bus
+const createBusIcon = (color: string = '#3b82f6') => {
+  return L.divIcon({
+    className: 'bus-marker',
+    html: `<div style="
+      background: ${color};
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 3px solid white;
+      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      animation: pulse 2s infinite;
+    ">
+      🚌
+    </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -15],
+  });
+};
+
+// ============================================
+// ✅ Dynamic imports pour React-Leaflet
+// ============================================
+
 const MapContainer = dynamic(
   () => import('react-leaflet').then((mod) => mod.MapContainer),
   { ssr: false }
 );
+
 const TileLayer = dynamic(
   () => import('react-leaflet').then((mod) => mod.TileLayer),
   { ssr: false }
 );
+
 const Marker = dynamic(
   () => import('react-leaflet').then((mod) => mod.Marker),
   { ssr: false }
 );
+
 const Popup = dynamic(
   () => import('react-leaflet').then((mod) => mod.Popup),
   { ssr: false }
 );
+
 const Polyline = dynamic(
   () => import('react-leaflet').then((mod) => mod.Polyline),
   { ssr: false }
 );
+
 const CircleMarker = dynamic(
   () => import('react-leaflet').then((mod) => mod.CircleMarker),
   { ssr: false }
 );
 
-// مكون الخريطة مع التوجيه
-function LineMap({ stations, line, onMapReady }) {
-  const [map, setMap] = useState(null);
+// ============================================
+// ✅ Composant LineMap - Version corrigée
+// ============================================
+
+function LineMap({ stations, line, onMapReady }: { 
+  stations: Station[]; 
+  line: BusLine | null; 
+  onMapReady: (ready: boolean) => void;
+}) {
+  const [map, setMap] = useState<any>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [routePoints, setRoutePoints] = useState([]);
+  const [routePoints, setRoutePoints] = useState<{lat: number; lng: number}[]>([]);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
-  const [busPosition, setBusPosition] = useState(null);
+  const [busPosition, setBusPosition] = useState<{lat: number; lng: number} | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [routeDistance, setRouteDistance] = useState(0);
   const [estimatedTime, setEstimatedTime] = useState(0);
-  const mapRef = useRef(null);
-  const animationRef = useRef(null);
-  const busMarkerRef = useRef(null);
+  const mapRef = useRef<any>(null);
+  const animationRef = useRef<number | null>(null);
+  const busMarkerRef = useRef<any>(null);
+  const isMountedRef = useRef(true);
 
-  // جلب مسار الشوارع الحقيقية باستخدام OSRM
+  // ✅ Nettoyage des refs
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
+
+  // ✅ Fonction pour récupérer le route OSRM
   const fetchRoute = async () => {
-    if (stations.length < 2) return;
+    if (stations.length < 2 || !isMountedRef.current) return;
 
     setIsLoadingRoute(true);
     try {
-      // تحويل المحطات إلى نقاط للتوجيه
-      const coordinates = stations
-        .filter(s => s.lat && s.lng)
+      const validStations = stations.filter(s => s.lat && s.lng);
+      if (validStations.length < 2) {
+        // Si moins de 2 stations valides, utiliser les points disponibles
+        const points = validStations.map(s => ({ lat: s.lat!, lng: s.lng! }));
+        setRoutePoints(points);
+        if (points.length > 0) {
+          setBusPosition(points[0]);
+        }
+        setIsLoadingRoute(false);
+        return;
+      }
+
+      const coordinates = validStations
         .map(s => `${s.lng},${s.lat}`)
         .join(';');
 
-      // استخدام OSRM API للحصول على المسار على الشوارع
       const response = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=true`
+        `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&steps=true`,
+        {
+          headers: {
+            'Accept': 'application/json',
+          },
+        }
       );
 
       if (!response.ok) throw new Error('Failed to fetch route');
@@ -91,43 +197,43 @@ function LineMap({ stations, line, onMapReady }) {
       
       if (data.routes && data.routes.length > 0) {
         const route = data.routes[0];
-        // استخراج نقاط المسار من GeoJSON
-        const points = route.geometry.coordinates.map(coord => ({
+        const points = route.geometry.coordinates.map((coord: number[]) => ({
           lat: coord[1],
           lng: coord[0]
         }));
         
         setRoutePoints(points);
-        setRouteDistance(route.distance / 1000); // تحويل إلى كيلومترات
-        setEstimatedTime(Math.round(route.duration / 60)); // تحويل إلى دقائق
+        setRouteDistance(route.distance / 1000);
+        setEstimatedTime(Math.round(route.duration / 60));
         
-        // تعيين موقع الحافلة في البداية
         if (points.length > 0) {
           setBusPosition(points[0]);
         }
       }
     } catch (error) {
       console.error('Error fetching route:', error);
-      // في حالة الخطأ، استخدم الخط المستقيم كبديل
-      const straightPoints = stations
+      // Fallback: utiliser les stations directement
+      const fallbackPoints = stations
         .filter(s => s.lat && s.lng)
-        .map(s => ({ lat: s.lat, lng: s.lng }));
-      setRoutePoints(straightPoints);
-      if (straightPoints.length > 0) {
-        setBusPosition(straightPoints[0]);
+        .map(s => ({ lat: s.lat!, lng: s.lng! }));
+      setRoutePoints(fallbackPoints);
+      if (fallbackPoints.length > 0) {
+        setBusPosition(fallbackPoints[0]);
       }
     } finally {
-      setIsLoadingRoute(false);
+      if (isMountedRef.current) {
+        setIsLoadingRoute(false);
+      }
     }
   };
 
-  // تشغيل حركة الحافلة
+  // ✅ Démarrer l'animation
   const startAnimation = () => {
     if (isPlaying) {
-      // إيقاف
       setIsPlaying(false);
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
       }
       return;
     }
@@ -136,6 +242,7 @@ function LineMap({ stations, line, onMapReady }) {
       setProgress(0);
       if (routePoints.length > 0) {
         setBusPosition(routePoints[0]);
+        updateBusMarker(routePoints[0]);
       }
     }
 
@@ -144,13 +251,14 @@ function LineMap({ stations, line, onMapReady }) {
     const startProgress = progress;
 
     const animate = () => {
-      const elapsed = (Date.now() - startTime) / 1000; // بالثواني
-      const speed = 0.3; // نسبة التقدم في الثانية
+      if (!isMountedRef.current) return;
+      
+      const elapsed = (Date.now() - startTime) / 1000;
+      const speed = 0.3;
       const newProgress = Math.min(startProgress + elapsed * speed, 100);
       
       setProgress(newProgress);
       
-      // تحديث موقع الحافلة
       if (routePoints.length > 1) {
         const index = Math.floor((newProgress / 100) * (routePoints.length - 1));
         const nextIndex = Math.min(index + 1, routePoints.length - 1);
@@ -161,12 +269,9 @@ function LineMap({ stations, line, onMapReady }) {
           const next = routePoints[nextIndex];
           const lat = current.lat + (next.lat - current.lat) * fraction;
           const lng = current.lng + (next.lng - current.lng) * fraction;
-          setBusPosition({ lat, lng });
-          
-          // تحديث موقع علامة الحافلة
-          if (busMarkerRef.current && map) {
-            busMarkerRef.current.setLatLng([lat, lng]);
-          }
+          const newPos = { lat, lng };
+          setBusPosition(newPos);
+          updateBusMarker(newPos);
         }
       }
       
@@ -177,6 +282,7 @@ function LineMap({ stations, line, onMapReady }) {
         setProgress(100);
         if (routePoints.length > 0) {
           setBusPosition(routePoints[routePoints.length - 1]);
+          updateBusMarker(routePoints[routePoints.length - 1]);
         }
       }
     };
@@ -184,58 +290,47 @@ function LineMap({ stations, line, onMapReady }) {
     animationRef.current = requestAnimationFrame(animate);
   };
 
-  // إعادة تعيين المسار
+  // ✅ Mettre à jour le marqueur du bus
+  const updateBusMarker = (position: {lat: number; lng: number}) => {
+    if (busMarkerRef.current && map) {
+      busMarkerRef.current.setLatLng([position.lat, position.lng]);
+    }
+  };
+
+  // ✅ Réinitialiser l'animation
   const resetAnimation = () => {
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
+      animationRef.current = null;
     }
     setIsPlaying(false);
     setProgress(0);
     if (routePoints.length > 0) {
       setBusPosition(routePoints[0]);
+      updateBusMarker(routePoints[0]);
     }
   };
 
+  // ✅ Initialisation de la carte et du route
   useEffect(() => {
     if (map && stations.length > 0) {
-      // تحميل المسار على الشوارع
       fetchRoute();
       
-      // حساب حدود المحطات
       const validStations = stations.filter(s => s.lat && s.lng);
       if (validStations.length > 0) {
-        const bounds = L.latLngBounds(validStations.map(s => [s.lat, s.lng]));
+        const bounds = L.latLngBounds(validStations.map(s => [s.lat!, s.lng!]));
         map.fitBounds(bounds, { padding: [50, 50] });
       }
-      onMapReady?.(true);
+      onMapReady(true);
     }
   }, [map, stations]);
 
-  // إضافة علامة الحافلة عند تحميل المسار
+  // ✅ Ajout du marqueur de bus
   useEffect(() => {
     if (map && routePoints.length > 0 && !busMarkerRef.current) {
       const firstPoint = routePoints[0];
-      const busIcon = L.divIcon({
-        html: `
-          <div style="
-            background: ${line?.color || '#3b82f6'};
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: 3px solid white;
-            box-shadow: 0 0 10px rgba(0,0,0,0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          ">
-            <span style="font-size: 10px;">🚌</span>
-          </div>
-        `,
-        className: 'bus-marker',
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-      });
-
+      const busIcon = createBusIcon(line?.color || '#3b82f6');
+      
       busMarkerRef.current = L.marker([firstPoint.lat, firstPoint.lng], { 
         icon: busIcon,
         zIndexOffset: 1000
@@ -253,8 +348,8 @@ function LineMap({ stations, line, onMapReady }) {
 
   const lineColor = line?.color || '#3b82f6';
   const pathPositions = routePoints.length > 0 
-    ? routePoints.map(p => [p.lat, p.lng])
-    : stations.filter(s => s.lat && s.lng).map(s => [s.lat, s.lng]);
+    ? routePoints.map(p => [p.lat, p.lng] as [number, number])
+    : stations.filter(s => s.lat && s.lng).map(s => [s.lat!, s.lng!] as [number, number]);
 
   return (
     <div className={`relative rounded-lg overflow-hidden border transition-all ${isFullscreen ? 'fixed inset-0 z-50 rounded-none' : ''}`}>
@@ -265,15 +360,18 @@ function LineMap({ stations, line, onMapReady }) {
           style={{ height: '100%', width: '100%' }}
           zoomControl={!isFullscreen}
           attributionControl={true}
-          ref={mapRef}
-          whenReady={() => setMap(mapRef.current)}
+          ref={(instance) => {
+            if (instance) {
+              mapRef.current = instance;
+              setMap(instance);
+            }
+          }}
         >
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           />
           
-          {/* Polyline للمسار على الشوارع */}
           {pathPositions.length > 1 && (
             <Polyline
               positions={pathPositions}
@@ -285,7 +383,6 @@ function LineMap({ stations, line, onMapReady }) {
             />
           )}
 
-          {/* نقاط المحطات */}
           {stations.map((station, index) => {
             if (!station.lat || !station.lng) return null;
             
@@ -313,37 +410,10 @@ function LineMap({ stations, line, onMapReady }) {
               </CircleMarker>
             );
           })}
-
-          {/* عرض رقم المحطة كـ Label */}
-          {stations.map((station, index) => {
-            if (!station.lat || !station.lng) return null;
-            const angle = (index / stations.length) * 360;
-            const offset = 25;
-            const latOffset = Math.sin(angle) * 0.001;
-            const lngOffset = Math.cos(angle) * 0.001;
-            
-            return (
-              <div
-                key={`label-${station.id}`}
-                className="absolute text-xs font-bold text-white"
-                style={{
-                  left: `${((index + 1) / (stations.length + 1)) * 100}%`,
-                  top: '100%',
-                  marginTop: '10px',
-                  transform: 'translateX(-50%)',
-                  zIndex: 1000,
-                }}
-              >
-                <Badge variant="outline" className="text-xs bg-background/80 backdrop-blur-sm">
-                  #{index + 1}
-                </Badge>
-              </div>
-            );
-          })}
         </MapContainer>
       </div>
 
-      {/* أزرار التحكم في الخريطة */}
+      {/* Contrôles de la carte */}
       <div className="absolute top-3 right-3 z-10 flex gap-2">
         <Button
           variant="outline"
@@ -353,7 +423,7 @@ function LineMap({ stations, line, onMapReady }) {
             if (map) {
               const validStations = stations.filter(s => s.lat && s.lng);
               if (validStations.length > 0) {
-                const bounds = L.latLngBounds(validStations.map(s => [s.lat, s.lng]));
+                const bounds = L.latLngBounds(validStations.map(s => [s.lat!, s.lng!]));
                 map.fitBounds(bounds, { padding: [50, 50] });
               }
             }
@@ -371,10 +441,9 @@ function LineMap({ stations, line, onMapReady }) {
         </Button>
       </div>
 
-      {/* معلومات المسار والتحكم */}
+      {/* Informations et contrôles du bus */}
       <div className="absolute bottom-3 left-3 right-3 z-10 bg-background/95 backdrop-blur-sm rounded-lg shadow-lg p-3">
         <div className="flex flex-col md:flex-row items-center gap-3">
-          {/* معلومات المسار */}
           <div className="flex items-center gap-4 text-xs text-muted-foreground">
             <div className="flex items-center gap-1">
               <span className="font-medium text-foreground">{stations.length}</span> محطة
@@ -398,7 +467,6 @@ function LineMap({ stations, line, onMapReady }) {
             )}
           </div>
 
-          {/* أزرار التحكم في الحافلة */}
           {routePoints.length > 1 && (
             <div className="flex items-center gap-3 flex-1">
               <div className="flex items-center gap-2">
@@ -406,13 +474,7 @@ function LineMap({ stations, line, onMapReady }) {
                   variant="outline"
                   size="sm"
                   className="h-8 w-8 p-0"
-                  onClick={() => {
-                    if (isPlaying) {
-                      startAnimation();
-                    } else {
-                      startAnimation();
-                    }
-                  }}
+                  onClick={startAnimation}
                 >
                   {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                 </Button>
@@ -433,7 +495,6 @@ function LineMap({ stations, line, onMapReady }) {
                   onValueChange={(value) => {
                     const newProgress = value[0];
                     setProgress(newProgress);
-                    // تحديث موقع الحافلة عند سحب المؤشر
                     if (routePoints.length > 1) {
                       const index = Math.floor((newProgress / 100) * (routePoints.length - 1));
                       const nextIndex = Math.min(index + 1, routePoints.length - 1);
@@ -444,11 +505,9 @@ function LineMap({ stations, line, onMapReady }) {
                         const next = routePoints[nextIndex];
                         const lat = current.lat + (next.lat - current.lat) * fraction;
                         const lng = current.lng + (next.lng - current.lng) * fraction;
-                        setBusPosition({ lat, lng });
-                        
-                        if (busMarkerRef.current && map) {
-                          busMarkerRef.current.setLatLng([lat, lng]);
-                        }
+                        const newPos = { lat, lng };
+                        setBusPosition(newPos);
+                        updateBusMarker(newPos);
                       }
                     }
                   }}
@@ -467,6 +526,10 @@ function LineMap({ stations, line, onMapReady }) {
     </div>
   );
 }
+
+// ============================================
+// ✅ Composant principal
+// ============================================
 
 export default function LineDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -547,7 +610,7 @@ export default function LineDetailPage() {
         </div>
       </div>
 
-      {/* الخريطة مع المسار على الشوارع */}
+      {/* Carte avec route */}
       <div className="mb-6">
         <LineMap 
           stations={stations} 
@@ -557,7 +620,7 @@ export default function LineDetailPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* المحطات */}
+        {/* Stations */}
         <Card className="p-5 lg:col-span-2">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
             <MapPin className="h-5 w-5 text-primary" />
@@ -601,7 +664,7 @@ export default function LineDetailPage() {
           </div>
         </Card>
 
-        {/* الحافلات */}
+        {/* Buses */}
         <Card className="p-5">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
             <BusIcon className="h-5 w-5 text-primary" />
