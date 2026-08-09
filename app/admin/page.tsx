@@ -30,7 +30,7 @@ import {
   SelectTrigger, SelectValue 
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { QRCodeManager } from '@/components/admin/qr-code-manager';
+import { withAuth } from '@/lib/withAuth';
 import StatisticsDashboard from '../../components/StatisticsDashboard';
 import type { Bus as BusType, Driver, Report, ActivityLog, BusLine, Station } from '@/lib/types';
 
@@ -75,7 +75,7 @@ interface DriverMessage {
 // ============================================
 // COMPOSANT PRINCIPAL
 // ============================================
-export default function AdminPage() {
+function AdminPage() {
   const { t, locale } = useI18n();
   const { toast } = useToast();
   const router = useRouter();
@@ -87,6 +87,7 @@ export default function AdminPage() {
   const [reports, setReports] = useState<Report[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [lines, setLines] = useState<BusLine[]>([]);
+  const [stations, setStations] = useState<Station[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [driverMessages, setDriverMessages] = useState<DriverMessage[]>([]);
   const [stats, setStats] = useState({ 
@@ -97,6 +98,39 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+
+  // ===== LINE STATE =====
+  const [lineFormOpen, setLineFormOpen] = useState(false);
+  const [editingLine, setEditingLine] = useState<any>(null);
+  const [lineForm, setLineForm] = useState({
+    number: '',
+    name_ar: '',
+    name_fr: '',
+    color: '#3B82F6',
+    status: 'active',
+    description_ar: '',
+    description_fr: '',
+  });
+
+  // ===== STATION STATE =====
+  const [stationFormOpen, setStationFormOpen] = useState(false);
+  const [editingStation, setEditingStation] = useState<any>(null);
+  const [selectedLineFilter, setSelectedLineFilter] = useState('');
+  const [stationSearchTerm, setStationSearchTerm] = useState('');
+  const [stationForm, setStationForm] = useState({
+    name_ar: '',
+    name_fr: '',
+    address_ar: '',
+    address_fr: '',
+    lat: 33.5731,
+    lng: -7.5898,
+    type: 'bus',
+    status: 'active',
+    line_id: '',
+    station_order: 0,
+    description_ar: '',
+    description_fr: '',
+  });
 
   // Message reply state
   const [messageReply, setMessageReply] = useState('');
@@ -132,7 +166,7 @@ export default function AdminPage() {
     email: '',
     full_name: '',
     phone: '',
-    role: 'customer' as const,
+    role: 'customer' as 'customer' | 'driver' | 'admin',
     password: '',
   });
 
@@ -155,7 +189,7 @@ export default function AdminPage() {
 
   // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; type: 'bus' | 'driver' | 'user' | 'announcement' | 'message'; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; type: 'bus' | 'driver' | 'user' | 'announcement' | 'message' | 'line' | 'station'; name: string } | null>(null);
 
   // Notification state
   const [notifTitle, setNotifTitle] = useState('');
@@ -187,79 +221,89 @@ export default function AdminPage() {
     }
   }, []);
 
-  // ============================================
-  // RÉCUPÉRATION DES DONNÉES
-  // ============================================
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [
-        busesRes,
-        driversRes,
-        reportsRes,
-        logsRes,
-        linesRes,
-        usersRes,
-        stationsRes,
-        announcementsRes,
-      ] = await Promise.all([
-        supabase.from('buses').select('*, line:lines(*)').order('plate'),
-        supabase.from('drivers').select('*').order('name'),
-        supabase.from('reports').select('*').order('created_at', { ascending: false }),
-        supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100),
-        supabase.from('lines').select('*').order('number'),
-        supabase.from('user_profiles').select('*').order('created_at', { ascending: false }),
-        supabase.from('stations').select('*', { count: 'exact' }).eq('status', 'active'),
-        supabase.from('announcements').select('*').order('created_at', { ascending: false }),
-      ]);
+// ============================================
+// RÉCUPÉRATION DES DONNÉES - CORRIGÉ
+// ============================================
+const fetchData = useCallback(async () => {
+  setLoading(true);
+  try {
+    const [
+      busesRes,
+      driversRes,
+      reportsRes,
+      logsRes,
+      linesRes,
+      usersRes,
+      stationsRes,
+      announcementsRes,
+    ] = await Promise.all([
+      supabase.from('buses').select('*, line:lines(*)').order('plate'),
+      supabase.from('drivers').select('*').order('name'),
+      supabase.from('reports').select('*').order('created_at', { ascending: false }),
+      supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(100),
+      supabase.from('lines').select('*').order('number'),
+      supabase.from('user_profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('stations').select('*, line:lines(id, number, name_ar, name_fr, color)').order('station_order', { ascending: true }),
+      supabase.from('announcements').select('*').order('created_at', { ascending: false }),
+    ]);
 
-      const busesData = (busesRes.data as unknown as BusType[]) || [];
-      const driversData = (driversRes.data as unknown as Driver[]) || [];
-      const reportsData = (reportsRes.data as unknown as Report[]) || [];
-      const usersData = (usersRes.data as unknown as UserProfile[]) || [];
-      const stationsData = (stationsRes.data as unknown as Station[]) || [];
-      const announcementsData = (announcementsRes.data as unknown as Announcement[]) || [];
+    const busesData = (busesRes.data as unknown as BusType[]) || [];
+    const driversData = (driversRes.data as unknown as Driver[]) || [];
+    const reportsData = (reportsRes.data as unknown as Report[]) || [];
+    const usersData = (usersRes.data as unknown as UserProfile[]) || [];
+    const stationsData = (stationsRes.data as unknown as Station[]) || [];
+    const announcementsData = (announcementsRes.data as unknown as Announcement[]) || [];
 
-      setBuses(busesData);
-      setDrivers(driversData);
-      setReports(reportsData);
-      setActivityLogs((logsRes.data as unknown as ActivityLog[]) || []);
-      setLines((linesRes.data as unknown as BusLine[]) || []);
-      setAnnouncements(announcementsData);
+    // ✅ معالجة الخطوط - استخدم status فقط
+    const rawLinesData = (linesRes.data as unknown as any[]) || [];
+    const linesData = rawLinesData.map((line: any) => ({
+      ...line,
+      // ✅ تأكد من وجود status
+      status: line.status || 'active',
+    }));
 
-      // Récupérer les messages
-      const { data: msgs } = await supabase
-        .from('driver_messages')
-        .select('*, driver:drivers(name, phone)')
-        .order('created_at', { ascending: false })
-        .limit(100);
-      setDriverMessages((msgs as unknown as DriverMessage[]) || []);
+    console.log('✅ Lines fetched:', linesData.length);
+    console.log('✅ Stations fetched:', stationsData.length);
 
-      // Statistiques
-      setStats({
-        activeBuses: busesData.filter((b) => b.status === 'active').length,
-        totalBuses: busesData.length,
-        totalLines: linesRes.data?.length || 0,
-        totalStations: stationsData.length,
-        openReports: reportsData.filter((r) => r.status === 'open').length,
-        totalDrivers: driversData.length,
-        onDutyDrivers: driversData.filter((d) => d.status === 'on_duty' || d.status === 'in_service').length,
-        totalUsers: usersData.length,
-      });
+    setBuses(busesData);
+    setDrivers(driversData);
+    setReports(reportsData);
+    setActivityLogs((logsRes.data as unknown as ActivityLog[]) || []);
+    setLines(linesData);
+    setStations(stationsData);
+    setAnnouncements(announcementsData);
 
-      setUsers(usersData);
+    const { data: msgs } = await supabase
+      .from('driver_messages')
+      .select('*, driver:drivers(name, phone)')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    setDriverMessages((msgs as unknown as DriverMessage[]) || []);
 
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: locale === 'ar' ? 'خطأ في التحميل' : 'Erreur de chargement',
-        description: locale === 'ar' ? 'تعذر تحميل البيانات' : 'Impossible de charger les données',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [locale, toast]);
+    setStats({
+      activeBuses: busesData.filter((b) => b.status === 'active').length,
+      totalBuses: busesData.length,
+      totalLines: linesData.length,
+      totalStations: stationsData.length,
+      openReports: reportsData.filter((r) => r.status === 'open').length,
+      totalDrivers: driversData.length,
+      onDutyDrivers: driversData.filter((d) => d.status === 'on_duty' || d.status === 'in_service').length,
+      totalUsers: usersData.length,
+    });
+
+    setUsers(usersData);
+
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    toast({
+      title: locale === 'ar' ? 'خطأ في التحميل' : 'Erreur de chargement',
+      description: locale === 'ar' ? 'تعذر تحميل البيانات' : 'Impossible de charger les données',
+      variant: 'destructive',
+    });
+  } finally {
+    setLoading(false);
+  }
+}, [locale, toast]);
 
   useEffect(() => {
     fetchData();
@@ -283,81 +327,630 @@ export default function AdminPage() {
   };
 
   // ============================================
-  // GESTION DES BUS (CRUD)
+  // GESTION DES LIGNES (CRUD)
   // ============================================
-  const handleBusSubmit = async () => {
-    if (!busForm.plate) {
+  const generateLineNumber = () => {
+    if (lines.length === 0) return '1';
+    const numbers = lines.map(l => parseInt(l.number) || 0);
+    const maxNumber = Math.max(...numbers);
+    return String(maxNumber + 1);
+  };
+
+// ============================================
+// GESTION DES LIGNES (CRUD) - CORRIGÉ
+// ============================================
+const handleLineSubmit = async () => {
+  if (!lineForm.name_ar || !lineForm.name_fr) {
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'الاسم مطلوب' : 'Le nom est requis',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  const isAuth = await checkAuth();
+  if (!isAuth) return;
+
+  try {
+    // ✅ بناء البيانات - استخدم status فقط (بدون is_active)
+    const data: any = {
+      name_ar: lineForm.name_ar.trim(),
+      name_fr: lineForm.name_fr.trim(),
+      color: lineForm.color || '#3B82F6',
+      status: lineForm.status, // ✅ استخدم status فقط
+      description_ar: lineForm.description_ar?.trim() || null,
+      description_fr: lineForm.description_fr?.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (editingLine) {
+      // ✅ تحديث خط موجود
+      const { error } = await supabase
+        .from('lines')
+        .update(data)
+        .eq('id', editingLine.id);
+
+      if (error) {
+        console.error('❌ Update error:', error);
+        throw error;
+      }
+      
+      await logActivity(
+        'تعديل خط',
+        user?.email || 'admin',
+        lineForm.name_ar,
+        `تعديل الخط ${lineForm.name_ar}`
+      );
+
+      toast({
+        title: locale === 'ar' ? '✅ تم التحديث' : '✅ Mis à jour',
+        description: `تم تحديث الخط ${lineForm.name_ar}`,
+      });
+    } else {
+      // ✅ إضافة خط جديد مع رقم تلقائي
+      const newNumber = generateLineNumber();
+      const { error } = await supabase
+        .from('lines')
+        .insert({
+          ...data,
+          number: newNumber,
+          created_at: new Date().toISOString(),
+        });
+
+      if (error) {
+        console.error('❌ Insert error:', error);
+        throw error;
+      }
+      
+      await logActivity(
+        'إضافة خط',
+        user?.email || 'admin',
+        lineForm.name_ar,
+        `إضافة خط جديد ${lineForm.name_ar}`
+      );
+
+      toast({
+        title: locale === 'ar' ? '✅ تمت الإضافة' : '✅ Ajouté',
+        description: `تم إضافة الخط رقم ${newNumber}`,
+      });
+    }
+
+    setLineFormOpen(false);
+    setEditingLine(null);
+    setLineForm({ number: '', name_ar: '', name_fr: '', color: '#3B82F6', status: 'active', description_ar: '', description_fr: '' });
+    fetchData();
+  } catch (error: any) {
+    console.error('❌ Error saving line:', error);
+    
+    let errorMessage = locale === 'ar' ? 'تعذر حفظ الخط' : 'Impossible de sauvegarder la ligne';
+    
+    if (error.message?.includes('duplicate key')) {
+      errorMessage = locale === 'ar' 
+        ? 'خط بنفس الاسم موجود بالفعل' 
+        : 'Une ligne avec ce nom existe déjà';
+    } else if (error.message?.includes('null value')) {
+      errorMessage = locale === 'ar' 
+        ? 'يرجى ملء جميع الحقول المطلوبة' 
+        : 'Veuillez remplir tous les champs requis';
+    }
+    
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: errorMessage,
+      variant: 'destructive',
+    });
+  }
+};
+
+ // ============================================
+// تغيير حالة الخط - CORRIGÉ
+// ============================================
+// ============================================
+// تغيير حالة الخط - CORRIGÉ
+// ============================================
+const toggleLineStatus = async (line: any) => {
+  const isAuth = await checkAuth();
+  if (!isAuth) return;
+
+  try {
+    const newStatus = line.status === 'active' ? 'inactive' : 'active';
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // ✅ تحديث status فقط (بدون is_active)
+    const { error } = await supabase
+      .from('lines')
+      .update({ 
+        status: newStatus,
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', line.id);
+
+    if (error) {
+      console.error('❌ Toggle status error:', error);
+      throw error;
+    }
+    
+    // ✅ تحديث الحالة في الـ state المحلي
+    setLines(prev => prev.map((l: any) => 
+      l.id === line.id ? { ...l, status: newStatus } : l
+    ));
+
+    await logActivity(
+      newStatus === 'active' ? 'تفعيل خط' : 'تعطيل خط',
+      user?.email || 'admin',
+      line.name_ar,
+      `تغيير حالة الخط ${line.name_ar} إلى ${newStatus === 'active' ? 'نشط' : 'غير نشط'}`
+    );
+
+    toast({
+      title: locale === 'ar' ? '✅ تم التحديث' : '✅ Mis à jour',
+      description: `الخط ${line.number} أصبح ${newStatus === 'active' ? 'نشطاً' : 'غير نشط'}`,
+    });
+    fetchData();
+  } catch (error: any) {
+    console.error('❌ Error toggling status:', error);
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'تعذر تحديث الحالة' : 'Impossible de mettre à jour le statut',
+      variant: 'destructive',
+    });
+  }
+};
+  const deleteLine = async () => {
+    if (!deleteTarget) return;
+    
+    const isAuth = await checkAuth();
+    if (!isAuth) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // حذف المحطات المرتبطة أولاً
+      await supabase
+        .from('stations')
+        .delete()
+        .eq('line_id', deleteTarget.id);
+
+      // ثم حذف الخط
+      const { error } = await supabase
+        .from('lines')
+        .delete()
+        .eq('id', deleteTarget.id);
+
+      if (error) throw error;
+      
+      await logActivity(
+        'حذف خط',
+        user?.email || 'admin',
+        deleteTarget.name,
+        `حذف الخط ${deleteTarget.name}`
+      );
+
+      toast({
+        title: locale === 'ar' ? '✅ تم الحذف' : '✅ Supprimé',
+        description: `تم حذف الخط ${deleteTarget.name}`,
+      });
+      
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting line:', error);
       toast({
         title: locale === 'ar' ? 'خطأ' : 'Erreur',
-        description: locale === 'ar' ? 'الرجاء إدخال رقم اللوحة' : 'Veuillez entrer le numéro de plaque',
+        description: locale === 'ar' ? 'تعذر حذف الخط' : 'Impossible de supprimer la ligne',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // ============================================
+  // GESTION DES STATIONS (CRUD)
+  // ============================================
+ // app/admin/page.tsx - استبدل دالة handleStationSubmit بهذه
+
+// ============================================
+// GESTION DES STATIONS (CRUD) - CORRIGÉ
+// ============================================
+const handleStationSubmit = async () => {
+  if (!stationForm.name_ar || !stationForm.name_fr) {
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'الاسم مطلوب' : 'Le nom est requis',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  const isAuth = await checkAuth();
+  if (!isAuth) return;
+
+  try {
+    let stationOrder = stationForm.station_order;
+    if (!stationOrder || stationOrder === 0) {
+      const stationsInLine = stations.filter(s => s.line_id === stationForm.line_id);
+      const maxOrder = stationsInLine.length > 0 
+        ? Math.max(...stationsInLine.map(s => s.station_order || 0))
+        : 0;
+      stationOrder = maxOrder + 1;
+    }
+
+    // ✅ بناء البيانات الصحيحة - فقط الحقول الموجودة في الجدول
+    const data: any = {
+      name_ar: stationForm.name_ar.trim(),
+      name_fr: stationForm.name_fr.trim(),
+      address_ar: stationForm.address_ar?.trim() || null,
+      address_fr: stationForm.address_fr?.trim() || null,
+      lat: stationForm.lat || 33.5731,
+      lng: stationForm.lng || -7.5898,
+      type: stationForm.type,
+      status: stationForm.status,
+      line_id: stationForm.line_id || null,
+      station_order: stationOrder,
+      description_ar: stationForm.description_ar?.trim() || null,
+      description_fr: stationForm.description_fr?.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    // ✅ إزالة الحقول غير الموجودة في الجدول
+    // لا نضيف is_active لأن الحقل قد لا يكون موجوداً في جدول stations
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (editingStation) {
+      // ✅ تحديث محطة موجودة
+      const { error } = await supabase
+        .from('stations')
+        .update(data)
+        .eq('id', editingStation.id);
+
+      if (error) {
+        console.error('❌ Update error:', error);
+        throw error;
+      }
+      
+      await logActivity(
+        'تعديل محطة',
+        user?.email || 'admin',
+        stationForm.name_ar,
+        `تعديل المحطة ${stationForm.name_ar}`
+      );
+
+      toast({
+        title: locale === 'ar' ? '✅ تم التحديث' : '✅ Mis à jour',
+        description: `تم تحديث المحطة ${stationForm.name_ar}`,
+      });
+    } else {
+      // ✅ إضافة محطة جديدة
+      const { error } = await supabase
+        .from('stations')
+        .insert({
+          ...data,
+          created_at: new Date().toISOString(),
+        });
+
+      if (error) {
+        console.error('❌ Insert error:', error);
+        throw error;
+      }
+      
+      await logActivity(
+        'إضافة محطة',
+        user?.email || 'admin',
+        stationForm.name_ar,
+        `إضافة محطة جديدة ${stationForm.name_ar}`
+      );
+
+      toast({
+        title: locale === 'ar' ? '✅ تمت الإضافة' : '✅ Ajouté',
+        description: `تم إضافة المحطة ${stationForm.name_ar}`,
+      });
+    }
+
+    setStationFormOpen(false);
+    setEditingStation(null);
+    resetStationForm();
+    fetchData();
+  } catch (error: any) {
+    console.error('❌ Error saving station:', error);
+    
+    // ✅ عرض رسالة خطأ مفصلة
+    let errorMessage = locale === 'ar' ? 'تعذر حفظ المحطة' : 'Impossible de sauvegarder la station';
+    
+    if (error.message?.includes('duplicate key')) {
+      errorMessage = locale === 'ar' 
+        ? 'محطة بنفس الاسم موجودة بالفعل' 
+        : 'Une station avec ce nom existe déjà';
+    } else if (error.message?.includes('violates foreign key')) {
+      errorMessage = locale === 'ar' 
+        ? 'الخط المحدد غير موجود' 
+        : 'La ligne sélectionnée n\'existe pas';
+    } else if (error.message?.includes('null value in column')) {
+      errorMessage = locale === 'ar' 
+        ? 'يرجى ملء جميع الحقول المطلوبة' 
+        : 'Veuillez remplir tous les champs requis';
+    }
+    
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: errorMessage,
+      variant: 'destructive',
+    });
+  }
+};
+
+  const resetStationForm = () => {
+    setStationForm({
+      name_ar: '',
+      name_fr: '',
+      address_ar: '',
+      address_fr: '',
+      lat: 33.5731,
+      lng: -7.5898,
+      type: 'bus',
+      status: 'active',
+      line_id: '',
+      station_order: 0,
+      description_ar: '',
+      description_fr: '',
+    });
+  };
+
+// ============================================
+// تغيير حالة المحطة - CORRIGÉ
+// ============================================
+const toggleStationStatus = async (station: any) => {
+  const isAuth = await checkAuth();
+  if (!isAuth) return;
+
+  try {
+    const newStatus = station.status === 'active' ? 'inactive' : 'active';
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    // ✅ تحديث فقط الحقول الموجودة
+    const { error } = await supabase
+      .from('stations')
+      .update({ 
+        status: newStatus,
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', station.id);
+
+    if (error) {
+      console.error('❌ Toggle status error:', error);
+      throw error;
+    }
+    
+    await logActivity(
+      newStatus === 'active' ? 'تفعيل محطة' : 'تعطيل محطة',
+      user?.email || 'admin',
+      station.name_ar,
+      `تغيير حالة المحطة ${station.name_ar} إلى ${newStatus === 'active' ? 'نشطة' : 'غير نشطة'}`
+    );
+
+    toast({
+      title: locale === 'ar' ? '✅ تم التحديث' : '✅ Mis à jour',
+      description: `المحطة ${station.name_ar} أصبحت ${newStatus === 'active' ? 'نشطة' : 'غير نشطة'}`,
+    });
+    fetchData();
+  } catch (error: any) {
+    console.error('❌ Error toggling status:', error);
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'تعذر تحديث الحالة' : 'Impossible de mettre à jour le statut',
+      variant: 'destructive',
+    });
+  }
+};
+
+  const deleteStation = async () => {
+    if (!deleteTarget) return;
+    
+    const isAuth = await checkAuth();
+    if (!isAuth) return;
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      const { error } = await supabase
+        .from('stations')
+        .delete()
+        .eq('id', deleteTarget.id);
+
+      if (error) throw error;
+      
+      await logActivity(
+        'حذف محطة',
+        user?.email || 'admin',
+        deleteTarget.name,
+        `حذف المحطة ${deleteTarget.name}`
+      );
+
+      toast({
+        title: locale === 'ar' ? '✅ تم الحذف' : '✅ Supprimé',
+        description: `تم حذف المحطة ${deleteTarget.name}`,
+      });
+      
+      setDeleteDialogOpen(false);
+      setDeleteTarget(null);
+      fetchData();
+    } catch (error) {
+      console.error('Error deleting station:', error);
+      toast({
+        title: locale === 'ar' ? 'خطأ' : 'Erreur',
+        description: locale === 'ar' ? 'تعذر حذف المحطة' : 'Impossible de supprimer la station',
+        variant: 'destructive',
+      });
+    }
+  };
+
+ // app/admin/page.tsx - استبدل دالة handleBusSubmit بهذه
+
+// ============================================
+// GESTION DES BUS (CRUD) - CORRIGÉ
+// ============================================
+const handleBusSubmit = async () => {
+  if (!busForm.plate) {
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'الرجاء إدخال رقم اللوحة' : 'Veuillez entrer le numéro de plaque',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  const isAuth = await checkAuth();
+  if (!isAuth) return;
+
+  try {
+    // ✅ التحقق من وجود حافلة بنفس رقم اللوحة
+    const { data: existingBus, error: checkError } = await supabase
+      .from('buses')
+      .select('id, plate')
+      .eq('plate', busForm.plate)
+      .maybeSingle();
+
+    if (checkError) {
+      console.error('❌ Check error:', checkError);
+    }
+
+    // ✅ إذا كانت موجودة ونحن في وضع الإضافة (وليس التعديل)
+    if (existingBus && !editingBus) {
+      toast({
+        title: locale === 'ar' ? 'خطأ' : 'Erreur',
+        description: locale === 'ar' 
+          ? `حافلة برقم اللوحة "${busForm.plate}" موجودة بالفعل`
+          : `Un bus avec la plaque "${busForm.plate}" existe déjà`,
         variant: 'destructive',
       });
       return;
     }
 
-    const isAuth = await checkAuth();
-    if (!isAuth) return;
-
-    try {
-      const data = {
-        plate: busForm.plate,
-        model: busForm.model || null,
-        capacity: Number(busForm.capacity),
-        status: busForm.status,
-        line_id: busForm.line_id || null,
-      };
-
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (editingBus) {
-        const { error } = await supabase
-          .from('buses')
-          .update(data)
-          .eq('id', editingBus.id);
-        if (error) throw error;
-        
-        await logActivity(
-          'تعديل حافلة',
-          user?.email || 'admin',
-          busForm.plate,
-          `تعديل بيانات الحافلة ${busForm.plate}`
-        );
-
-        toast({
-          title: locale === 'ar' ? 'تم التحديث' : 'Mis à jour',
-          description: `${busForm.plate} ${locale === 'ar' ? 'تم تحديثه بنجاح' : 'a été mis à jour'}`,
-        });
-      } else {
-        const { error } = await supabase
-          .from('buses')
-          .insert(data);
-        if (error) throw error;
-        
-        await logActivity(
-          'إضافة حافلة',
-          user?.email || 'admin',
-          busForm.plate,
-          `إضافة حافلة جديدة ${busForm.plate}`
-        );
-
-        toast({
-          title: locale === 'ar' ? 'تمت الإضافة' : 'Ajouté',
-          description: `${busForm.plate} ${locale === 'ar' ? 'تمت إضافته بنجاح' : 'a été ajouté'}`,
-        });
-      }
-
-      setBusFormOpen(false);
-      resetBusForm();
-      fetchData();
-    } catch (error) {
-      console.error('Error saving bus:', error);
+    // ✅ إذا كانت موجودة ونحن في وضع التعديل ولكن المعرف مختلف
+    if (existingBus && editingBus && existingBus.id !== editingBus.id) {
       toast({
         title: locale === 'ar' ? 'خطأ' : 'Erreur',
-        description: locale === 'ar' ? 'تعذر حفظ الحافلة' : 'Impossible de sauvegarder le bus',
+        description: locale === 'ar' 
+          ? `حافلة برقم اللوحة "${busForm.plate}" موجودة بالفعل`
+          : `Un bus avec la plaque "${busForm.plate}" existe déjà`,
         variant: 'destructive',
       });
+      return;
     }
-  };
+
+    const data = {
+      plate: busForm.plate.trim(),
+      model: busForm.model?.trim() || null,
+      capacity: Number(busForm.capacity) || 50,
+      status: busForm.status,
+      line_id: busForm.line_id || null,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (editingBus) {
+      // ✅ تحديث حافلة موجودة
+      const { error } = await supabase
+        .from('buses')
+        .update(data)
+        .eq('id', editingBus.id);
+
+      if (error) {
+        console.error('❌ Update error:', error);
+        
+        // ✅ معالجة أخطاء محددة
+        if (error.code === '23505') {
+          toast({
+            title: locale === 'ar' ? 'خطأ' : 'Erreur',
+            description: locale === 'ar' 
+              ? 'رقم اللوحة مستخدم من قبل حافلة أخرى'
+              : 'Ce numéro de plaque est déjà utilisé par un autre bus',
+            variant: 'destructive',
+          });
+          return;
+        }
+        throw error;
+      }
+      
+      await logActivity(
+        'تعديل حافلة',
+        user?.email || 'admin',
+        busForm.plate,
+        `تعديل بيانات الحافلة ${busForm.plate}`
+      );
+
+      toast({
+        title: locale === 'ar' ? 'تم التحديث' : 'Mis à jour',
+        description: `${busForm.plate} ${locale === 'ar' ? 'تم تحديثه بنجاح' : 'a été mis à jour'}`,
+      });
+    } else {
+      // ✅ إضافة حافلة جديدة
+      const { error } = await supabase
+        .from('buses')
+        .insert({
+          ...data,
+          created_at: new Date().toISOString(),
+        });
+
+      if (error) {
+        console.error('❌ Insert error:', error);
+        
+        // ✅ معالجة أخطاء محددة
+        if (error.code === '23505') {
+          toast({
+            title: locale === 'ar' ? 'خطأ' : 'Erreur',
+            description: locale === 'ar' 
+              ? 'رقم اللوحة موجود بالفعل'
+              : 'Ce numéro de plaque existe déjà',
+            variant: 'destructive',
+          });
+          return;
+        }
+        throw error;
+      }
+      
+      await logActivity(
+        'إضافة حافلة',
+        user?.email || 'admin',
+        busForm.plate,
+        `إضافة حافلة جديدة ${busForm.plate}`
+      );
+
+      toast({
+        title: locale === 'ar' ? 'تمت الإضافة' : 'Ajouté',
+        description: `${busForm.plate} ${locale === 'ar' ? 'تمت إضافته بنجاح' : 'a été ajouté'}`,
+      });
+    }
+
+    setBusFormOpen(false);
+    resetBusForm();
+    fetchData();
+  } catch (error: any) {
+    console.error('Error saving bus:', error);
+    
+    let errorMessage = locale === 'ar' ? 'تعذر حفظ الحافلة' : 'Impossible de sauvegarder le bus';
+    
+    if (error.message?.includes('duplicate key') || error.code === '23505') {
+      errorMessage = locale === 'ar' 
+        ? 'رقم اللوحة موجود بالفعل'
+        : 'Ce numéro de plaque existe déjà';
+    } else if (error.message?.includes('null value')) {
+      errorMessage = locale === 'ar' 
+        ? 'يرجى ملء جميع الحقول المطلوبة'
+        : 'Veuillez remplir tous les champs requis';
+    }
+    
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: errorMessage,
+      variant: 'destructive',
+    });
+  }
+};
 
   const resetBusForm = () => {
     setEditingBus(null);
@@ -491,7 +1084,7 @@ export default function AdminPage() {
             role: 'driver',
             updated_at: new Date().toISOString(),
           })
-          .eq('id', editingDriver.user_id);
+          .eq('driver_id', editingDriver.id);
 
         await logActivity(
           'تعديل سائق',
@@ -961,7 +1554,7 @@ export default function AdminPage() {
       email: user.email,
       full_name: user.full_name,
       phone: user.phone || '',
-      role: user.role,
+      role: user.role as 'customer' | 'driver' | 'admin',
       password: '',
     });
     setUserFormOpen(true);
@@ -1344,6 +1937,18 @@ export default function AdminPage() {
     return matchSearch && matchRole;
   });
 
+  // تصفية المحطات للعرض
+  const filteredStations = stations.filter(station => {
+    if (!stationSearchTerm) return true;
+    const search = stationSearchTerm.toLowerCase();
+    return (
+      station.name_ar?.toLowerCase().includes(search) ||
+      station.name_fr?.toLowerCase().includes(search) ||
+      (station.address_ar && station.address_ar.toLowerCase().includes(search)) ||
+      (station.address_fr && station.address_fr.toLowerCase().includes(search))
+    );
+  });
+
   return (
     <div className="container mx-auto px-4 py-8">
       <motion.div
@@ -1422,21 +2027,13 @@ export default function AdminPage() {
             <MessageSquare className="h-4 w-4" />
             {locale === 'ar' ? 'الرسائل' : 'Messages'}
           </TabsTrigger>
-          <TabsTrigger value="lines" className="gap-1.5" asChild>
-            <a href="/admin/lines">
-              <Route className="h-4 w-4" />
-              {locale === 'ar' ? 'الخطوط' : 'Lignes'}
-            </a>
+          <TabsTrigger value="lines" className="gap-1.5">
+            <Route className="h-4 w-4" />
+            {locale === 'ar' ? 'الخطوط' : 'Lignes'}
           </TabsTrigger>
-          <TabsTrigger value="stations" className="gap-1.5" asChild>
-            <a href="/admin/stations">
-              <MapPin className="h-4 w-4" />
-              {locale === 'ar' ? 'المحطات' : 'Stations'}
-            </a>
-          </TabsTrigger>
-          <TabsTrigger value="qr" className="gap-1.5">
-            <QrCode className="h-4 w-4" />
-            {locale === 'ar' ? 'رموز QR' : 'Codes QR'}
+          <TabsTrigger value="stations" className="gap-1.5">
+            <MapPin className="h-4 w-4" />
+            {locale === 'ar' ? 'المحطات' : 'Stations'}
           </TabsTrigger>
           <TabsTrigger value="dispatch" className="gap-1.5">
             <Send className="h-4 w-4" />
@@ -1657,12 +2254,13 @@ export default function AdminPage() {
                             {buses.find(b => b.id === driver.bus_id)?.plate || (locale === 'ar' ? 'حافلة مخصصة' : 'Bus assigné')}
                           </div>
                         )}
-                        {driver.user_id && (
-                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                            <Mail className="h-3 w-3" />
-                            {users.find(u => u.id === driver.user_id)?.email || '—'}
-                          </div>
-                        )}
+                  {/* ✅ إذا لم يكن user_id موجوداً، حاول استخدام driver.email */}
+{!driver.user_id && driver.email && (
+  <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+    <Mail className="h-3 w-3" />
+    {driver.email}
+  </div>
+)}
                       </div>
                       <Badge variant={statusColors[driver.status] as any || 'secondary'}>
                         {t.common[driver.status as keyof typeof t.common] || driver.status}
@@ -2055,11 +2653,223 @@ export default function AdminPage() {
           </div>
         </TabsContent>
 
-        {/* ===== QR TAB ===== */}
-        <TabsContent value="qr">
-          <Card className="glass p-5">
-            <QRCodeManager />
-          </Card>
+        {/* ===== LINES TAB ===== */}
+     
+
+<TabsContent value="lines">
+  <div className="space-y-4">
+    <div className="flex justify-between items-center">
+      <div>
+        <h3 className="text-sm font-semibold">🚌 إدارة الخطوط</h3>
+        <p className="text-xs text-muted-foreground">إدارة خطوط النقل - العدد: {lines.length}</p>
+      </div>
+      <Button onClick={() => { 
+        setEditingLine(null); 
+        setLineForm({ 
+          number: '', 
+          name_ar: '', 
+          name_fr: '', 
+          color: '#3B82F6', 
+          status: 'active', 
+          description_ar: '', 
+          description_fr: '' 
+        }); 
+        setLineFormOpen(true); 
+      }}>
+        + إضافة خط
+      </Button>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {lines.map((line: any) => (
+        <Card key={line.id} className="p-4 hover:shadow-md transition-shadow">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: line.color || '#3B82F6' }} />
+                <span className="font-bold text-lg">#{line.number}</span>
+                <Badge variant={line.status === 'active' ? 'default' : 'secondary'}>
+                  {line.status === 'active' ? '🟢 نشط' : '🔴 غير نشط'}
+                </Badge>
+              </div>
+              <div className="mt-2">
+                <div className="font-semibold text-base">{line.name_ar}</div>
+                <div className="text-sm text-muted-foreground">{line.name_fr}</div>
+              </div>
+              {(line.description_ar || line.description_fr) && (
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                  {line.description_ar || line.description_fr}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-1 ml-2">
+              {/* ✅ استخدم toggleLineStatus وليس fetchDatatoggleLineStatus */}
+              <Button variant="ghost" size="sm" onClick={() => toggleLineStatus(line)}>
+                {line.status === 'active' ? '🔴' : '🟢'}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { 
+                setEditingLine(line); 
+                setLineForm({ 
+                  number: line.number, 
+                  name_ar: line.name_ar, 
+                  name_fr: line.name_fr, 
+                  color: line.color || '#3B82F6', 
+                  status: line.status, 
+                  description_ar: line.description_ar || '', 
+                  description_fr: line.description_fr || '' 
+                }); 
+                setLineFormOpen(true); 
+              }}>
+                ✏️
+              </Button>
+              <Button variant="ghost" size="sm" className="text-red-500" onClick={() => {
+                setDeleteTarget({ id: line.id, type: 'line', name: line.name_ar });
+                setDeleteDialogOpen(true);
+              }}>
+                🗑️
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+
+    {lines.length === 0 && (
+      <div className="text-center py-12 text-muted-foreground">
+        <div className="text-6xl mb-4">🚌</div>
+        <p className="text-lg">لا توجد خطوط</p>
+        <p className="text-sm">انقر على "إضافة خط" لإنشاء أول خط</p>
+      </div>
+    )}
+  </div>
+</TabsContent>
+        {/* ===== STATIONS TAB ===== */}
+        <TabsContent value="stations">
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="text-sm font-semibold">📍 إدارة المحطات</h3>
+                <p className="text-xs text-muted-foreground">إدارة محطات النقل - العدد: {stations.length}</p>
+              </div>
+              <Button onClick={() => { setEditingStation(null); resetStationForm(); setStationFormOpen(true); }}>
+                + إضافة محطة
+              </Button>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <Input
+                  placeholder="🔍 بحث عن محطة..."
+                  value={stationSearchTerm}
+                  onChange={(e) => setStationSearchTerm(e.target.value)}
+                  className="w-full"
+                />
+              </div>
+              <select
+                value={selectedLineFilter}
+                onChange={(e) => setSelectedLineFilter(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm bg-background w-full sm:w-auto"
+              >
+                <option value="">جميع الخطوط</option>
+                {lines.map((line: any) => (
+                  <option key={line.id} value={line.id}>
+                    {line.number} - {line.name_ar}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              {filteredStations.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <div className="text-6xl mb-4">📍</div>
+                  <p className="text-lg">لا توجد محطات</p>
+                  <p className="text-sm">انقر على "إضافة محطة" لإنشاء أول محطة</p>
+                </div>
+              ) : (
+                filteredStations.map((station: any) => {
+                  const line = lines.find(l => l.id === station.line_id);
+                  return (
+                    <Card key={station.id} className="p-4 hover:shadow-md transition-all">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant={
+                              station.type === 'bus' ? 'default' : 
+                              station.type === 'tram' ? 'secondary' : 'outline'
+                            } className="text-xs">
+                              {station.type === 'bus' ? '🚌 حافلة' : station.type === 'tram' ? '🚋 ترام' : '🚆 قطار'}
+                            </Badge>
+                            <Badge 
+                              className={`text-xs ${station.status === 'active' 
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
+                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                              }`}
+                            >
+                              {station.status === 'active' ? '🟢 نشط' : '🔴 غير نشط'}
+                            </Badge>
+                            {line && (
+                              <Badge variant="outline" className="text-xs flex items-center gap-1">
+                                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: line.color }} />
+                                {line.number}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="mt-1">
+                            <div className="font-semibold text-base">{station.name_ar}</div>
+                            <div className="text-sm text-muted-foreground">{station.name_fr}</div>
+                          </div>
+                          {station.address_ar && (
+                            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                              <span>📍</span>
+                              <span>{station.address_ar}</span>
+                            </div>
+                          )}
+                          {station.lat && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              📌 {station.lat.toFixed(5)}, {station.lng.toFixed(5)}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex gap-1 ml-2">
+                          <Button variant="ghost" size="sm" onClick={() => toggleStationStatus(station)}>
+                            {station.status === 'active' ? '🔴' : '🟢'}
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => {
+                            setEditingStation(station);
+                            setStationForm({
+                              name_ar: station.name_ar,
+                              name_fr: station.name_fr,
+                              address_ar: station.address_ar || '',
+                              address_fr: station.address_fr || '',
+                              lat: station.lat || 33.5731,
+                              lng: station.lng || -7.5898,
+                              type: station.type || 'bus',
+                              status: station.status || 'active',
+                              line_id: station.line_id || '',
+                              station_order: station.station_order || 0,
+                              description_ar: station.description_ar || '',
+                              description_fr: station.description_fr || '',
+                            });
+                            setStationFormOpen(true);
+                          }}>
+                            ✏️
+                          </Button>
+                          <Button variant="ghost" size="sm" className="text-red-500" onClick={() => {
+                            setDeleteTarget({ id: station.id, type: 'station', name: station.name_ar });
+                            setDeleteDialogOpen(true);
+                          }}>
+                            🗑️
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </TabsContent>
 
         {/* ===== DISPATCH TAB ===== */}
@@ -2069,9 +2879,12 @@ export default function AdminPage() {
               <Bell className="h-4 w-4 text-primary" />
               {locale === 'ar' ? 'إرسال إشعار للسائقين' : 'Envoyer une notification aux chauffeurs'}
             </h3>
+            
             <div className="space-y-3 max-w-md">
               <div>
-                <Label className="text-xs">{locale === 'ar' ? 'العنوان' : 'Titre'}</Label>
+                <Label className="text-xs">
+                  {locale === 'ar' ? 'العنوان' : 'Titre'}
+                </Label>
                 <Input 
                   value={notifTitle} 
                   onChange={(e) => setNotifTitle(e.target.value)} 
@@ -2079,8 +2892,11 @@ export default function AdminPage() {
                   placeholder={locale === 'ar' ? 'عنوان الإشعار' : 'Titre de la notification'} 
                 />
               </div>
+              
               <div>
-                <Label className="text-xs">{locale === 'ar' ? 'المحتوى' : 'Contenu'}</Label>
+                <Label className="text-xs">
+                  {locale === 'ar' ? 'المحتوى' : 'Contenu'}
+                </Label>
                 <Textarea 
                   value={notifBody} 
                   onChange={(e) => setNotifBody(e.target.value)} 
@@ -2089,15 +2905,31 @@ export default function AdminPage() {
                   placeholder={locale === 'ar' ? 'محتوى الإشعار' : 'Contenu de la notification'} 
                 />
               </div>
-              <Button onClick={sendNotification} className="gap-2">
-                <Send className="h-4 w-4" />
-                {locale === 'ar' ? 'إرسال للسائقين النشطين' : 'Envoyer aux chauffeurs actifs'}
-              </Button>
+              
+              <div className="flex items-center gap-2">
+                <Button 
+                  onClick={sendNotification} 
+                  className="gap-2 flex-1"
+                  disabled={!notifTitle.trim()}
+                >
+                  <Send className="h-4 w-4" />
+                  {locale === 'ar' ? 'إرسال للسائقين النشطين' : 'Envoyer aux chauffeurs actifs'}
+                </Button>
+              </div>
+              
               <p className="text-xs text-muted-foreground">
                 {locale === 'ar' 
-                  ? `سيتم الإرسال إلى ${drivers.filter((d) => d.status === 'on_duty' || d.status === 'in_service').length} سائق نشط` 
-                  : `Sera envoyé à ${drivers.filter((d) => d.status === 'on_duty' || d.status === 'in_service').length} chauffeur(s) actif(s)`}
+                  ? `📨 سيتم الإرسال إلى ${drivers.filter((d) => d.status === 'on_duty' || d.status === 'in_service').length} سائق نشط` 
+                  : `📨 Sera envoyé à ${drivers.filter((d) => d.status === 'on_duty' || d.status === 'in_service').length} chauffeur(s) actif(s)`}
               </p>
+              
+              {drivers.filter((d) => d.status === 'on_duty' || d.status === 'in_service').length === 0 && (
+                <div className="rounded-lg bg-warning/10 p-3 text-sm text-warning">
+                  {locale === 'ar' 
+                    ? '⚠️ لا يوجد سائقين نشطين للإرسال حالياً'
+                    : '⚠️ Aucun chauffeur actif disponible actuellement'}
+                </div>
+              )}
             </div>
           </Card>
         </TabsContent>
@@ -2152,6 +2984,255 @@ export default function AdminPage() {
       {/* ============================================ */}
       {/* ===== DIALOGS ===== */}
       {/* ============================================ */}
+
+      {/* ===== LINE FORM DIALOG ===== */}
+      <Dialog open={lineFormOpen} onOpenChange={setLineFormOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingLine ? '✏️ تعديل الخط' : '➕ إضافة خط جديد'}</DialogTitle>
+            <DialogDescription>
+              {editingLine ? 'تعديل بيانات الخط' : 'أدخل بيانات الخط الجديد'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {editingLine && (
+              <div>
+                <Label>رقم الخط</Label>
+                <Input value={lineForm.number} disabled className="bg-muted" />
+              </div>
+            )}
+            <div>
+              <Label>الاسم (عربي) *</Label>
+              <Input
+                value={lineForm.name_ar}
+                onChange={(e) => setLineForm({ ...lineForm, name_ar: e.target.value })}
+                placeholder="اسم الخط بالعربية"
+                required
+              />
+            </div>
+            <div>
+              <Label>الاسم (فرنسي) *</Label>
+              <Input
+                value={lineForm.name_fr}
+                onChange={(e) => setLineForm({ ...lineForm, name_fr: e.target.value })}
+                placeholder="Nom en français"
+                required
+              />
+            </div>
+            <div>
+              <Label>اللون</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="color"
+                  value={lineForm.color}
+                  onChange={(e) => setLineForm({ ...lineForm, color: e.target.value })}
+                  className="w-12 h-10 p-1"
+                />
+                <Input
+                  value={lineForm.color}
+                  onChange={(e) => setLineForm({ ...lineForm, color: e.target.value })}
+                  className="flex-1"
+                  placeholder="#3B82F6"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>الحالة</Label>
+              <select
+                value={lineForm.status}
+                onChange={(e) => setLineForm({ ...lineForm, status: e.target.value })}
+                className="w-full border rounded-lg p-2"
+              >
+                <option value="active">🟢 نشط</option>
+                <option value="inactive">🔴 غير نشط</option>
+              </select>
+            </div>
+            <div>
+              <Label>الوصف (عربي)</Label>
+              <Input
+                value={lineForm.description_ar}
+                onChange={(e) => setLineForm({ ...lineForm, description_ar: e.target.value })}
+                placeholder="وصف الخط بالعربية"
+              />
+            </div>
+            <div>
+              <Label>الوصف (فرنسي)</Label>
+              <Input
+                value={lineForm.description_fr}
+                onChange={(e) => setLineForm({ ...lineForm, description_fr: e.target.value })}
+                placeholder="Description en français"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLineFormOpen(false)}>إلغاء</Button>
+            <Button onClick={handleLineSubmit} className="gap-2">
+              {editingLine ? '💾 تحديث' : '➕ إضافة'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== STATION FORM DIALOG ===== */}
+      <Dialog open={stationFormOpen} onOpenChange={setStationFormOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingStation ? '✏️ تعديل المحطة' : '➕ إضافة محطة جديدة'}</DialogTitle>
+            <DialogDescription>
+              {editingStation ? 'تعديل بيانات المحطة' : 'أدخل بيانات المحطة الجديدة'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>الاسم (عربي) *</Label>
+                <Input
+                  value={stationForm.name_ar}
+                  onChange={(e) => setStationForm({ ...stationForm, name_ar: e.target.value })}
+                  placeholder="اسم المحطة بالعربية"
+                  required
+                />
+              </div>
+              <div>
+                <Label>الاسم (فرنسي) *</Label>
+                <Input
+                  value={stationForm.name_fr}
+                  onChange={(e) => setStationForm({ ...stationForm, name_fr: e.target.value })}
+                  placeholder="Nom en français"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>العنوان (عربي)</Label>
+                <Input
+                  value={stationForm.address_ar}
+                  onChange={(e) => setStationForm({ ...stationForm, address_ar: e.target.value })}
+                  placeholder="عنوان المحطة بالعربية"
+                />
+              </div>
+              <div>
+                <Label>العنوان (فرنسي)</Label>
+                <Input
+                  value={stationForm.address_fr}
+                  onChange={(e) => setStationForm({ ...stationForm, address_fr: e.target.value })}
+                  placeholder="Adresse en français"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>خط العرض</Label>
+                <Input
+                  type="number"
+                  step="0.00001"
+                  value={stationForm.lat}
+                  onChange={(e) => setStationForm({ ...stationForm, lat: parseFloat(e.target.value) || 0 })}
+                  placeholder="33.5731"
+                />
+              </div>
+              <div>
+                <Label>خط الطول</Label>
+                <Input
+                  type="number"
+                  step="0.00001"
+                  value={stationForm.lng}
+                  onChange={(e) => setStationForm({ ...stationForm, lng: parseFloat(e.target.value) || 0 })}
+                  placeholder="-7.5898"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>النوع</Label>
+                <select
+                  value={stationForm.type}
+                  onChange={(e) => setStationForm({ ...stationForm, type: e.target.value })}
+                  className="w-full border rounded-lg p-2 bg-background"
+                >
+                  <option value="bus">🚌 حافلة</option>
+                  <option value="tram">🚋 ترام</option>
+                  <option value="train">🚆 قطار</option>
+                </select>
+              </div>
+              <div>
+                <Label>الحالة</Label>
+                <select
+                  value={stationForm.status}
+                  onChange={(e) => setStationForm({ ...stationForm, status: e.target.value })}
+                  className="w-full border rounded-lg p-2 bg-background"
+                >
+                  <option value="active">🟢 نشط</option>
+                  <option value="inactive">🔴 غير نشط</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <Label>الخط</Label>
+              <select
+                value={stationForm.line_id}
+                onChange={(e) => setStationForm({ ...stationForm, line_id: e.target.value })}
+                className="w-full border rounded-lg p-2 bg-background"
+              >
+                <option value="">بدون خط</option>
+                {lines.filter((l: any) => l.status === 'active').map((line: any) => (
+                  <option key={line.id} value={line.id}>
+                    {line.number} - {line.name_ar}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <Label>ترتيب المحطة</Label>
+              <Input
+                type="number"
+                min="0"
+                value={stationForm.station_order}
+                onChange={(e) => setStationForm({ ...stationForm, station_order: parseInt(e.target.value) || 0 })}
+                placeholder="0 (تلقائي)"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {!stationForm.station_order || stationForm.station_order === 0 ? 'سيتم تحديد الترتيب تلقائياً' : 'الترتيب المحدد'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>الوصف (عربي)</Label>
+                <Input
+                  value={stationForm.description_ar}
+                  onChange={(e) => setStationForm({ ...stationForm, description_ar: e.target.value })}
+                  placeholder="وصف المحطة بالعربية"
+                />
+              </div>
+              <div>
+                <Label>الوصف (فرنسي)</Label>
+                <Input
+                  value={stationForm.description_fr}
+                  onChange={(e) => setStationForm({ ...stationForm, description_fr: e.target.value })}
+                  placeholder="Description en français"
+                />
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStationFormOpen(false)}>إلغاء</Button>
+            <Button onClick={handleStationSubmit} className="gap-2">
+              {editingStation ? '💾 تحديث' : '➕ إضافة'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ===== BUS FORM DIALOG ===== */}
       <Dialog open={busFormOpen} onOpenChange={setBusFormOpen}>
@@ -2222,7 +3303,7 @@ export default function AdminPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="">{locale === 'ar' ? 'بدون خط' : 'Sans ligne'}</SelectItem>
-                  {lines.map((line) => (
+                  {lines.map((line: any) => (
                     <SelectItem key={line.id} value={line.id}>
                       {line.number} - {locale === 'ar' ? line.name_ar : line.name_fr}
                     </SelectItem>
@@ -2654,6 +3735,8 @@ export default function AdminPage() {
               else if (deleteTarget?.type === 'user') deleteUser();
               else if (deleteTarget?.type === 'announcement') deleteAnnouncement();
               else if (deleteTarget?.type === 'message') deleteMessage(deleteTarget.id);
+              else if (deleteTarget?.type === 'line') deleteLine();
+              else if (deleteTarget?.type === 'station') deleteStation();
             }}>
               {locale === 'ar' ? 'حذف' : 'Supprimer'}
             </Button>
@@ -2663,3 +3746,6 @@ export default function AdminPage() {
     </div>
   );
 }
+
+// ✅ تصدير مع الحماية
+export default withAuth(AdminPage, ['admin', 'super_admin']);

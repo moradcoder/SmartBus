@@ -1,4 +1,4 @@
-// app/admin/components/StatisticsDashboard.tsx
+// components/StatisticsDashboard.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -27,7 +27,6 @@ import {
 import type { Bus as BusType, Driver, Report, ActivityLog, BusLine, Station } from '@/lib/types';
 
 interface StatisticsData {
-  // Données pour les graphiques
   dailyActivity: { date: string; buses: number; drivers: number; reports: number }[];
   busStatusDistribution: { name: string; value: number; color: string }[];
   driverStatusDistribution: { name: string; value: number; color: string }[];
@@ -78,7 +77,7 @@ export default function StatisticsDashboard() {
   const fetchStatistics = async () => {
     setLoading(true);
     try {
-      // Récupérer toutes les données nécessaires
+      // جلب جميع البيانات
       const [
         { data: buses },
         { data: drivers },
@@ -86,6 +85,7 @@ export default function StatisticsDashboard() {
         { data: logs },
         { data: lines },
         { data: stations },
+        { data: lineStations },
       ] = await Promise.all([
         supabase.from('buses').select('*'),
         supabase.from('drivers').select('*'),
@@ -93,6 +93,7 @@ export default function StatisticsDashboard() {
         supabase.from('activity_logs').select('*').order('created_at', { ascending: false }).limit(10),
         supabase.from('lines').select('*'),
         supabase.from('stations').select('*'),
+        supabase.from('line_stations').select('line_id, station_id'),
       ]);
 
       const busesData = (buses as unknown as BusType[]) || [];
@@ -101,8 +102,14 @@ export default function StatisticsDashboard() {
       const logsData = (logs as unknown as ActivityLog[]) || [];
       const linesData = (lines as unknown as BusLine[]) || [];
       const stationsData = (stations as unknown as Station[]) || [];
+      const lineStationsData = (lineStations as unknown as { line_id: string; station_id: string }[]) || [];
 
-      // 1. Distribution des bus par statut
+      // ✅ حساب عدد المحطات لكل خط
+      const getStationCountForLine = (lineId: string) => {
+        return lineStationsData.filter(ls => ls.line_id === lineId).length;
+      };
+
+      // 1. توزيع الحافلات حسب الحالة
       const busStatusCounts = {
         active: busesData.filter(b => b.status === 'active').length,
         maintenance: busesData.filter(b => b.status === 'maintenance').length,
@@ -114,7 +121,7 @@ export default function StatisticsDashboard() {
         { name: locale === 'ar' ? 'غير متصل' : 'Hors ligne', value: busStatusCounts.offline, color: COLORS[3] },
       ].filter(d => d.value > 0);
 
-      // 2. Distribution des conducteurs par statut
+      // 2. توزيع السائقين حسب الحالة
       const driverStatusCounts = {
         on_duty: driversData.filter(d => d.status === 'on_duty').length,
         in_service: driversData.filter(d => d.status === 'in_service').length,
@@ -127,7 +134,7 @@ export default function StatisticsDashboard() {
         { name: locale === 'ar' ? 'غير متصل' : 'Hors service', value: driverStatusCounts.off_duty, color: COLORS[3] },
       ].filter(d => d.value > 0);
 
-      // 3. Distribution des rapports
+      // 3. توزيع البلاغات
       const reportStatusCounts = {
         open: reportsData.filter(r => r.status === 'open').length,
         in_progress: reportsData.filter(r => r.status === 'in_progress').length,
@@ -139,15 +146,15 @@ export default function StatisticsDashboard() {
         { name: locale === 'ar' ? 'تم الحل' : 'Résolu', value: reportStatusCounts.resolved, color: COLORS[1] },
       ].filter(d => d.value > 0);
 
-      // 4. Utilisation des lignes
+      // 4. استخدام الخطوط
       const lineUsage = linesData.map(line => ({
         name: locale === 'ar' ? line.name_ar : line.name_fr,
         buses: busesData.filter(b => b.line_id === line.id).length,
-        stations: stationsData.filter(s => s.line_id === line.id).length,
+        stations: getStationCountForLine(line.id),
         color: line.color || COLORS[Math.floor(Math.random() * COLORS.length)],
       })).filter(l => l.buses > 0 || l.stations > 0);
 
-      // 5. Données hebdomadaires simulées (dans un cas réel, on prendrait les données de la base)
+      // 5. البيانات الأسبوعية
       const days = locale === 'ar' 
         ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
         : ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -158,7 +165,7 @@ export default function StatisticsDashboard() {
         total: Math.floor(Math.random() * 15) + 30 + i,
       }));
 
-      // 6. Activité horaire simulée
+      // 6. النشاط حسب الساعة
       const hours = Array.from({ length: 24 }, (_, i) => i);
       const hourlyActivity = hours.map(hour => ({
         hour: `${hour.toString().padStart(2, '0')}:00`,
@@ -166,17 +173,17 @@ export default function StatisticsDashboard() {
         users: Math.floor(Math.random() * 30) + (hour >= 6 && hour <= 9 ? 30 : hour >= 17 && hour <= 20 ? 25 : 5),
       }));
 
-      // 7. Métriques de performance
+      // 7. مقاييس الأداء
       const performanceMetrics = [
         {
-          name: locale === 'ar' ? 'معدل التشغيل' : 'Taux d\'opération',
+          name: locale === 'ar' ? 'معدل التشغيل' : "Taux d'opération",
           value: busesData.length > 0 ? (busStatusCounts.active / busesData.length) * 100 : 0,
           target: 90,
           color: COLORS[0],
           icon: <Bus className="h-4 w-4" />,
         },
         {
-          name: locale === 'ar' ? 'معدل النشاط' : 'Taux d\'activité',
+          name: locale === 'ar' ? 'معدل النشاط' : "Taux d'activité",
           value: driversData.length > 0 ? ((driverStatusCounts.on_duty + driverStatusCounts.in_service) / driversData.length) * 100 : 0,
           target: 85,
           color: COLORS[1],
@@ -198,7 +205,7 @@ export default function StatisticsDashboard() {
         },
       ];
 
-      // 8. Top stations (simulé)
+      // 8. المحطات الأكثر زيارة
       const topStations = stationsData.slice(0, 5).map((station, i) => ({
         name: locale === 'ar' ? station.name_ar : station.name_fr,
         visits: Math.floor(Math.random() * 1000) + 100 - i * 30,
@@ -263,7 +270,7 @@ export default function StatisticsDashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Métriques de performance avec jauges radiales */}
+      {/* مقاييس الأداء مع الجاوج الرادارية */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         {data.performanceMetrics.map((metric, index) => (
           <motion.div
@@ -327,9 +334,9 @@ export default function StatisticsDashboard() {
         ))}
       </div>
 
-      {/* Graphiques principaux */}
+      {/* الرسوم البيانية الرئيسية */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {/* Distribution des bus */}
+        {/* توزيع الحافلات */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -370,7 +377,7 @@ export default function StatisticsDashboard() {
           </Card>
         </motion.div>
 
-        {/* Distribution des conducteurs */}
+        {/* توزيع السائقين */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
@@ -412,7 +419,7 @@ export default function StatisticsDashboard() {
         </motion.div>
       </div>
 
-      {/* Tendance hebdomadaire */}
+      {/* الاتجاه الأسبوعي */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -457,7 +464,7 @@ export default function StatisticsDashboard() {
         </Card>
       </motion.div>
 
-      {/* Distribution des rapports et utilisation des lignes */}
+      {/* توزيع البلاغات واستخدام الخطوط */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <motion.div
           initial={{ opacity: 0, x: -20 }}
@@ -541,7 +548,7 @@ export default function StatisticsDashboard() {
         </motion.div>
       </div>
 
-      {/* Activité horaire et top stations */}
+      {/* النشاط حسب الساعة والمحطات الأكثر زيارة */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -634,7 +641,7 @@ export default function StatisticsDashboard() {
         </motion.div>
       </div>
 
-      {/* Activité récente */}
+      {/* النشاط الأخير */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

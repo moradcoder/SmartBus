@@ -7,6 +7,7 @@ export interface BusLine {
   direction: string | null;
   waypoints: [number, number][];
   is_active: boolean;
+  status?: 'active' | 'inactive';
 }
 
 export interface Station {
@@ -32,27 +33,41 @@ export interface LineStation {
 export interface Bus {
   id: string;
   plate: string;
-  model: string;
+  model?: string;
   capacity: number;
-  status: string;
+  status: 'active' | 'maintenance' | 'offline' | 'inactive';
   line_id?: string;
   driver_id?: string;
-  current_lat: number;
-  current_lng: number;
-  heading: number;
-  speed: number;
-  last_updated: string | null;
+  // ✅ أضف هذه الخصائص
+  gps_active?: boolean;
+  current_lat?: number;
+  current_lng?: number;
+  speed?: number;
+  heading?: number;
+  last_updated?: string;
   created_at: string;
-  line?: BusLine;
+  updated_at?: string;
+   line?: BusLine;
+  driver?: Driver;
 }
 
 export interface Driver {
   id: string;
+  user_id?: string;
   name: string;
   license_number: string | null;
   phone: string | null;
   status: 'on_duty' | 'in_service' | 'break' | 'off_duty';
   bus_id: string | null;
+  created_at?: string;
+  updated_at?: string;
+  email?: string;
+  user?: {
+    id: string;
+    email: string;
+    full_name: string;
+  };
+
 }
 
 export interface Trip {
@@ -74,6 +89,9 @@ export interface Announcement {
   type: 'info' | 'alert' | 'news';
   is_published: boolean;
   published_at: string;
+   created_at?: string;    // تاريخ الإنشاء
+  updated_at?: string;    // تاريخ التحديث
+
 }
 
 export interface Report {
@@ -126,4 +144,25 @@ export interface Settings {
   logo_url: string | null;
   default_lat: number;
   default_lng: number;
+}
+// lib/types.ts - تحديث واجهة Station
+
+export interface Station {
+  id: string;
+  line_id?: string; 
+  code: string | null;
+  name_ar: string;
+  name_fr: string;
+  station_order?: number;  
+  lat: number;
+  lng: number;
+  has_shelter: boolean;
+  is_active: boolean;
+  // ✅ أضف هذه الخصائص
+  address_ar?: string;      // العنوان بالعربية (اختياري)
+  address_fr?: string;      // العنوان بالفرنسية (اختياري)
+  type?: 'bus' | 'tram' | 'train'; // نوع المحطة (اختياري)
+  status?: 'active' | 'inactive';   // حالة المحطة (اختياري)
+  created_at?: string;      // تاريخ الإنشاء (اختياري)
+  updated_at?: string;      // تاريخ التحديث (اختياري)
 }

@@ -1,6 +1,7 @@
 // app/driver/page.tsx
 'use client';
 
+import { withAuth } from '@/lib/withAuth';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { 
@@ -59,9 +60,9 @@ const GPS_LAST_POSITION_KEY = 'smartbus_gps_last_position';
 // Main Component
 // ============================================
 
-export default function DriverDashboard() {
+function DriverPage() {
   const { t, locale } = useI18n();
-  const { profile, logout } = useAuth();
+  const { profile, signOut } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   
@@ -102,6 +103,10 @@ export default function DriverDashboard() {
   const gpsRestartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isGpsStartingRef = useRef(false);
   const isRestoringRef = useRef(false);
+  const isStoppingRef = useRef(false);
+  const restoreAttemptsRef = useRef(0);
+  const MAX_RESTORE_ATTEMPTS = 3;
+  const isInitialRestoreDone = useRef(false);
 
   // ============================================
   // Environment Check
@@ -177,9 +182,16 @@ export default function DriverDashboard() {
   }, []);
 
   // ============================================
-  // ✅ Core GPS Update Function
+  // دالة تسجيل الخروج
   // ============================================
-  
+  const handleLogout = async () => {
+    await signOut();
+    router.push('/login');
+  };
+
+  // ============================================
+  // Core GPS Update Function
+  // ============================================
   const updateBusLocation = useCallback(async (lat: number, lng: number, speed: number, heading: number) => {
     if (!bus?.id) {
       console.warn('No bus ID available for location update');
@@ -196,12 +208,10 @@ export default function DriverDashboard() {
 
     try {
       const nowISO = new Date().toISOString();
-      
-      // ✅ السرعة الحقيقية من GPS
       const realSpeed = speed || 0;
       const realHeading = heading || 0;
       
-      console.log(`📡 تحديث موقع حقيقي: سرعة ${realSpeed.toFixed(1)} كم/س, اتجاه ${realHeading}°`);
+      console.log(`📡 تحديث موقع: سرعة ${realSpeed.toFixed(1)} كم/س, اتجاه ${realHeading}°`);
       
       const { error } = await supabase
         .from('buses')
@@ -240,7 +250,6 @@ export default function DriverDashboard() {
   // ============================================
   // Clean GPS Watch
   // ============================================
-  
   const cleanGpsWatch = useCallback(() => {
     console.log('🧹 Cleaning GPS watch...');
     
@@ -270,9 +279,8 @@ export default function DriverDashboard() {
   }, [hasGeolocation]);
 
   // ============================================
-  // ✅ Start Real GPS avec mise à jour toutes les 5 secondes
+  // Start Real GPS
   // ============================================
-  
   const startRealGps = useCallback(async () => {
     if (isGpsStartingRef.current) {
       console.log('⏳ GPS already starting, waiting...');
@@ -311,7 +319,6 @@ export default function DriverDashboard() {
 
     cleanGpsWatch();
 
-    // ✅ تحديث حالة GPS في قاعدة البيانات
     try {
       const { error } = await supabase
         .from('buses')
@@ -348,7 +355,6 @@ export default function DriverDashboard() {
     };
 
     try {
-      // ✅ watchPosition pour les mises à jour en temps réel
       watchIdRef.current = navigator.geolocation.watchPosition(
         async (position) => {
           if (!isMountedRef.current) return;
@@ -371,14 +377,6 @@ export default function DriverDashboard() {
           setIsOnline(false);
           setGpsError(error.message);
           setIsUsingRealGps(false);
-          
-          toast({
-            title: locale === 'ar' ? '⚠️ خطأ في GPS' : '⚠️ Erreur GPS',
-            description: locale === 'ar' 
-              ? `تعذر الحصول على الموقع: ${error.message}`
-              : `Impossible d'obtenir la position: ${error.message}`,
-            variant: 'destructive',
-          });
           
           setGpsRetryCount(prev => prev + 1);
           
@@ -405,7 +403,6 @@ export default function DriverDashboard() {
       
       saveGpsState(true);
       
-      // ✅ Mise à jour périodique toutes les 5 secondes
       if (gpsIntervalRef.current) {
         clearInterval(gpsIntervalRef.current);
       }
@@ -416,7 +413,7 @@ export default function DriverDashboard() {
           return;
         }
         
-        console.log('🔄 Mise à jour périodique toutes les 5 secondes...');
+        console.log('🔄 Periodic update...');
         
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
@@ -427,7 +424,7 @@ export default function DriverDashboard() {
               const realSpeed = speed || 0;
               const realHeading = heading || 0;
               
-              console.log(`📍 Périodique: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}, speed: ${realSpeed.toFixed(1)}km/h`);
+              console.log(`📍 Periodic: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}, speed: ${realSpeed.toFixed(1)}km/h`);
               
               setIsOnline(true);
               setGpsError(null);
@@ -442,7 +439,7 @@ export default function DriverDashboard() {
             { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
           );
         }
-      }, 5000); // ✅ كل 5 ثواني
+      }, 5000);
 
       toast({
         title: locale === 'ar' ? '✅ بدء التتبع' : '✅ Suivi démarré',
@@ -467,103 +464,154 @@ export default function DriverDashboard() {
   }, [bus, hasGeolocation, updateBusLocation, cleanGpsWatch, saveGpsState, toast, locale, gpsRetryCount, gpsActive]);
 
   // ============================================
-  // ✅ Stop GPS
+  // Stop GPS - الإصلاح النهائي
   // ============================================
-  
   const stopGps = useCallback(async () => {
-    console.log('🛑 Stopping GPS...');
-    
-    // ✅ Arrêter l'intervalle
-    if (gpsIntervalRef.current) {
-      clearInterval(gpsIntervalRef.current);
-      gpsIntervalRef.current = null;
-      console.log('✅ Periodic interval stopped');
+    if (isStoppingRef.current) {
+      console.log('⏳ GPS already stopping...');
+      return;
     }
-    
-    cleanGpsWatch();
-    
-    setGpsActive(false);
-    setIsOnline(false);
-    setGpsError(null);
-    setGpsRetryCount(0);
-    isGpsStartingRef.current = false;
-    isRestoringRef.current = false;
-    setIsUsingRealGps(false);
-    
-    clearGpsState();
-    
-    if (bus?.id) {
-      try {
-        const { error } = await supabase
-          .from('buses')
-          .update({
-            gps_active: false,
-            status: 'inactive',
-            speed: 0,
-            heading: 0,
-            last_updated: new Date().toISOString(),
-          })
-          .eq('id', bus.id);
 
-        if (error) {
-          console.error('❌ Failed to update GPS status to inactive:', error);
-        } else {
-          console.log('✅ GPS status updated to inactive in database');
-        }
-      } catch (error) {
-        console.error('❌ Error updating GPS status:', error);
-      }
+    if (!gpsActive && watchIdRef.current === null) {
+      console.log('ℹ️ GPS already stopped');
+      return;
     }
-    
-    if (driver) {
-      await supabase
-        .from('drivers')
-        .update({ 
-          status: 'off_duty',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', driver.id);
+
+    isStoppingRef.current = true;
+
+    try {
+      console.log('🛑 Stopping GPS...');
       
-      setDriver({ ...driver, status: 'off_duty' });
-    }
-    
-    console.log('✅ GPS stopped definitively');
-    
-    toast({
-      title: locale === 'ar' ? '⏹️ إيقاف التتبع' : '⏹️ Suivi arrêté',
-      description: locale === 'ar' 
-        ? 'تم إيقاف تتبع موقع الحافلة بشكل نهائي وستختفي من الخريطة'
-        : 'Le suivi GPS a été arrêté définitivement et le bus disparaîtra de la carte',
-    });
-  }, [cleanGpsWatch, clearGpsState, toast, locale, driver, bus]);
+      if (gpsIntervalRef.current) {
+        clearInterval(gpsIntervalRef.current);
+        gpsIntervalRef.current = null;
+        console.log('✅ Periodic interval stopped');
+      }
+      
+      if (watchIdRef.current !== null && hasGeolocation) {
+        try {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+          console.log('✅ GPS watch cleared:', watchIdRef.current);
+        } catch (error) {
+          console.warn('Error clearing GPS watch:', error);
+        }
+        watchIdRef.current = null;
+      }
+      
+      setGpsActive(false);
+      setIsOnline(false);
+      setGpsError(null);
+      setGpsRetryCount(0);
+      isGpsStartingRef.current = false;
+      isRestoringRef.current = false;
+      setIsUsingRealGps(false);
+      
+      clearGpsState();
+      
+      if (bus?.id) {
+        try {
+          const { data: currentBus } = await supabase
+            .from('buses')
+            .select('gps_active')
+            .eq('id', bus.id)
+            .single();
 
-  // ============================================
-  // Toggle GPS
-  // ============================================
-  
-  const handleToggleGps = useCallback(async () => {
-    if (gpsActive) {
-      await stopGps();
-    } else {
-      setGpsActive(true);
-      await startRealGps();
+          if (currentBus?.gps_active === true) {
+            const { error } = await supabase
+              .from('buses')
+              .update({
+                gps_active: false,
+                status: 'inactive',
+                speed: 0,
+                heading: 0,
+                last_updated: new Date().toISOString(),
+              })
+              .eq('id', bus.id);
+
+            if (error) {
+              console.error('❌ Failed to update GPS status to inactive:', error);
+            } else {
+              console.log('✅ GPS status updated to inactive in database');
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error updating GPS status:', error);
+        }
+      }
+      
       if (driver) {
         await supabase
           .from('drivers')
           .update({ 
-            status: 'on_duty',
+            status: 'off_duty',
             updated_at: new Date().toISOString()
           })
           .eq('id', driver.id);
-        setDriver({ ...driver, status: 'on_duty' });
+        
+        setDriver({ ...driver, status: 'off_duty' });
       }
+      
+      console.log('✅ GPS stopped definitively');
+      
+      toast({
+        title: locale === 'ar' ? '⏹️ إيقاف التتبع' : '⏹️ Suivi arrêté',
+        description: locale === 'ar' 
+          ? 'تم إيقاف تتبع موقع الحافلة'
+          : 'Le suivi GPS a été arrêté',
+      });
+    } catch (error) {
+      console.error('❌ Error stopping GPS:', error);
+    } finally {
+      isStoppingRef.current = false;
     }
-  }, [gpsActive, startRealGps, stopGps, driver]);
+  }, [hasGeolocation, clearGpsState, toast, locale, driver, bus, gpsActive]);
+
+  // ============================================
+  // Toggle GPS
+  // ============================================
+  const handleToggleGps = useCallback(async () => {
+    if (isGpsStartingRef.current || isStoppingRef.current) {
+      console.log('⏳ GPS operation in progress, please wait...');
+      toast({
+        title: locale === 'ar' ? '⏳ جاري المعالجة' : '⏳ En cours...',
+        description: locale === 'ar' ? 'يرجى الانتظار حتى اكتمال العملية' : 'Veuillez patienter...',
+      });
+      return;
+    }
+
+    try {
+      const isActuallyActive = gpsActive || watchIdRef.current !== null;
+
+      if (isActuallyActive) {
+        await stopGps();
+      } else {
+        setGpsActive(true);
+        await startRealGps();
+        
+        if (driver) {
+          await supabase
+            .from('drivers')
+            .update({ 
+              status: 'on_duty',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', driver.id);
+          setDriver({ ...driver, status: 'on_duty' });
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error toggling GPS:', error);
+      toast({
+        title: locale === 'ar' ? '❌ خطأ' : '❌ Erreur',
+        description: locale === 'ar' ? 'حدث خطأ أثناء تشغيل GPS' : 'Erreur lors du démarrage du GPS',
+        variant: 'destructive',
+      });
+    }
+  }, [gpsActive, startRealGps, stopGps, driver, toast, locale]);
 
   // ============================================
   // Update Driver Status
   // ============================================
-  
   const updateDriverStatus = useCallback(async (status: string) => {
     if (!driver) return;
     
@@ -601,11 +649,15 @@ export default function DriverDashboard() {
   // ============================================
   // Restore GPS Session
   // ============================================
-  
   const restoreGpsSession = useCallback(async () => {
-    if (isRestoringRef.current) {
+    if (isRestoringRef.current || isGpsStartingRef.current) {
       console.log('⏳ Restoration already in progress');
       return false;
+    }
+
+    if (gpsActive || watchIdRef.current !== null) {
+      console.log('ℹ️ GPS already active');
+      return true;
     }
 
     const savedState = loadGpsState();
@@ -626,28 +678,29 @@ export default function DriverDashboard() {
       return false;
     }
 
-    if (gpsActive) {
-      console.log('ℹ️ GPS already active');
-      return true;
-    }
-
     console.log('🔄 Restoring GPS session...');
     isRestoringRef.current = true;
 
-    setGpsActive(true);
-    
-    setTimeout(() => {
-      startRealGps();
+    try {
+      setGpsActive(true);
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      if (isMountedRef.current && !isGpsStartingRef.current && watchIdRef.current === null) {
+        await startRealGps();
+      }
+      
       isRestoringRef.current = false;
-    }, 1000);
-
-    return true;
+      return true;
+    } catch (error) {
+      console.error('❌ Error restoring GPS:', error);
+      isRestoringRef.current = false;
+      return false;
+    }
   }, [driver, bus, loadGpsState, startRealGps, clearGpsState, gpsActive]);
 
   // ============================================
   // Load Driver Data
   // ============================================
-  
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -731,30 +784,90 @@ export default function DriverDashboard() {
   }, [profile, locale, toast]);
 
   // ============================================
-  // Restore GPS Session After Data Load
+  // Restore GPS Session After Data Load - الإصلاح النهائي
   // ============================================
-  
   useEffect(() => {
-    if (driver && bus && !loading && dataLoaded) {
-      if (bus.gps_active) {
-        console.log('🔍 GPS is active in database, restoring...');
-        restoreGpsSession();
-      } else {
-        console.log('ℹ️ GPS is inactive in database');
-        if (gpsActive) {
-          stopGps();
-        }
-        clearGpsState();
-        setGpsActive(false);
-        setIsUsingRealGps(false);
+    let isProcessing = false;
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const handleGpsRestore = async () => {
+      if (isProcessing || !driver || !bus || loading || !dataLoaded) {
+        return;
       }
-    }
-  }, [driver, bus, loading, dataLoaded, restoreGpsSession, stopGps, clearGpsState, gpsActive]);
+
+      // ✅ منع المحاولات المتكررة بعد النجاح
+      if (isInitialRestoreDone.current) {
+        console.log('ℹ️ Initial restore already done, skipping...');
+        return;
+      }
+
+      if (restoreAttemptsRef.current >= MAX_RESTORE_ATTEMPTS) {
+        console.log('⚠️ Max restore attempts reached, stopping...');
+        return;
+      }
+
+      isProcessing = true;
+
+      try {
+        const { data: freshBusData, error: freshError } = await supabase
+          .from('buses')
+          .select('gps_active, status')
+          .eq('id', bus.id)
+          .single();
+
+        if (freshError) {
+          console.error('❌ Error fetching fresh bus data:', freshError);
+          return;
+        }
+
+        if (freshBusData?.gps_active === true) {
+          console.log('🔍 GPS is active in database');
+          
+          if (gpsActive || watchIdRef.current !== null) {
+            console.log('ℹ️ GPS already running, skipping restore');
+            isInitialRestoreDone.current = true;
+            return;
+          }
+          
+          console.log('🔄 Restoring GPS session...');
+          await restoreGpsSession();
+          isInitialRestoreDone.current = true;
+          restoreAttemptsRef.current = 0;
+        } else {
+          console.log('ℹ️ GPS is inactive in database');
+          
+          if (gpsActive || watchIdRef.current !== null) {
+            await stopGps();
+          }
+          
+          clearGpsState();
+          setGpsActive(false);
+          setIsUsingRealGps(false);
+          isInitialRestoreDone.current = true;
+          restoreAttemptsRef.current = 0;
+        }
+      } catch (error) {
+        console.error('❌ Error in GPS restore:', error);
+        restoreAttemptsRef.current++;
+      } finally {
+        isProcessing = false;
+      }
+    };
+
+    // ✅ تأخير التنفيذ
+    timeoutId = setTimeout(handleGpsRestore, 1500);
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      isProcessing = false;
+    };
+  }, [driver, bus, loading, dataLoaded, gpsActive, restoreGpsSession, stopGps, clearGpsState]);
 
   // ============================================
   // Cleanup
   // ============================================
-  
   useEffect(() => {
     return () => {
       isMountedRef.current = false;
@@ -764,14 +877,21 @@ export default function DriverDashboard() {
         clearInterval(gpsIntervalRef.current);
         gpsIntervalRef.current = null;
       }
-      cleanGpsWatch();
+      
+      if (watchIdRef.current !== null) {
+        try {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        } catch (error) {
+          console.warn('Error clearing GPS watch on unmount:', error);
+        }
+        watchIdRef.current = null;
+      }
     };
-  }, [cleanGpsWatch]);
+  }, []);
 
   // ============================================
   // Cleanup on logout
   // ============================================
-  
   useEffect(() => {
     const handleLogout = () => {
       console.log('🚪 User logging out...');
@@ -792,7 +912,6 @@ export default function DriverDashboard() {
   // ============================================
   // Send Message
   // ============================================
-  
   const sendMessage = async () => {
     if (!newMessage.trim() || !driver) return;
     
@@ -834,7 +953,6 @@ export default function DriverDashboard() {
   // ============================================
   // Send Report
   // ============================================
-  
   const sendReport = async () => {
     if (!reportDesc.trim() || !driver) return;
     
@@ -873,7 +991,6 @@ export default function DriverDashboard() {
   // ============================================
   // Mark Notification Read
   // ============================================
-  
   const markNotificationRead = async (id: string) => {
     try {
       await supabase
@@ -893,7 +1010,6 @@ export default function DriverDashboard() {
   // ============================================
   // Loading State
   // ============================================
-  
   if (loading) {
     return (
       <div className="container mx-auto px-4 py-20">
@@ -912,7 +1028,6 @@ export default function DriverDashboard() {
   // ============================================
   // No Driver
   // ============================================
-  
   if (!driver) {
     return (
       <div className="container mx-auto px-4 py-20 text-center">
@@ -938,7 +1053,6 @@ export default function DriverDashboard() {
   // ============================================
   // Status Options
   // ============================================
-  
   const statusOptions = [
     { value: 'on_duty', label: t.driver.online, color: 'bg-success', icon: CheckCircle },
     { value: 'in_service', label: t.driver.inService, color: 'bg-primary', icon: Activity },
@@ -949,10 +1063,8 @@ export default function DriverDashboard() {
   // ============================================
   // Main Render
   // ============================================
-  
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -965,6 +1077,15 @@ export default function DriverDashboard() {
             <p className="mt-1 text-muted-foreground">{t.driver.subtitle}</p>
           </div>
           <div className="mt-2 md:mt-0 flex flex-wrap items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleLogout}
+              className="gap-2 text-destructive hover:text-destructive"
+            >
+              <span>{locale === 'ar' ? 'تسجيل الخروج' : 'Déconnexion'}</span>
+            </Button>
+            
             {bus && (
               <Badge variant="outline" className="gap-1">
                 <BusIcon className="h-3 w-3" />
@@ -1020,11 +1141,9 @@ export default function DriverDashboard() {
         </div>
       </motion.div>
 
-      {/* Main Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* LEFT COLUMN: Status + GPS + Bus */}
         <div className="space-y-4">
-          {/* Status card */}
           <Card className="p-5">
             <h3 className="mb-4 text-sm font-semibold">{t.driver.status}</h3>
             <div className="space-y-2">
@@ -1033,9 +1152,7 @@ export default function DriverDashboard() {
                 return (
                   <button
                     key={opt.value}
-                    onClick={() => {
-                      updateDriverStatus(opt.value);
-                    }}
+                    onClick={() => updateDriverStatus(opt.value)}
                     className={`flex w-full items-center justify-between rounded-lg border p-3 text-sm transition-all ${
                       driver.status === opt.value
                         ? 'border-primary bg-primary/10 font-medium'
@@ -1152,7 +1269,6 @@ export default function DriverDashboard() {
             )}
           </Card>
 
-          {/* No Bus Warning */}
           {!bus && (
             <Card className="p-5 border-destructive/50 bg-destructive/5">
               <div className="flex items-center gap-3">
@@ -1171,7 +1287,6 @@ export default function DriverDashboard() {
             </Card>
           )}
 
-          {/* Assigned bus */}
           {bus && (
             <Card className="p-5">
               <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
@@ -1217,7 +1332,6 @@ export default function DriverDashboard() {
 
         {/* MIDDLE COLUMN: Notifications + Report */}
         <div className="space-y-4">
-          {/* Notifications */}
           <Card className="p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="flex items-center gap-2 text-sm font-semibold">
@@ -1278,7 +1392,6 @@ export default function DriverDashboard() {
             )}
           </Card>
 
-          {/* Report issue */}
           <Card className="p-5">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <AlertCircle className="h-4 w-4 text-destructive" />
@@ -1397,3 +1510,5 @@ export default function DriverDashboard() {
     </div>
   );
 }
+
+export default withAuth(DriverPage, ['driver', 'admin', 'super_admin']);

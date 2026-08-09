@@ -117,3 +117,41 @@
 .leaflet-bar a {
   border-radius: 8px !important;
 }
+/* app/globals.css - أضف هذه الأنماط */
+
+/* أيقونات المحطات */
+.station-marker {
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.station-marker:hover > div {
+  transform: scale(1.15);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+/* أيقونات الحافلات */
+.bus-marker {
+  transition: all 0.3s ease;
+  cursor: pointer;
+  z-index: 500;
+}
+
+.bus-marker:hover > div {
+  transform: scale(1.1);
+}
+
+/* وسيلة الإيضاح */
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.1);
+}

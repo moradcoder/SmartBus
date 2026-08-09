@@ -1,3 +1,4 @@
+// app/profile/page.tsx - النسخة المصححة
 'use client';
 
 import { useState } from 'react';
@@ -72,10 +73,11 @@ export default function ProfilePage() {
         </div>
 
         <Card className="glass p-6">
+          {/* ✅ رسالة نجاح الحفظ - استخدم نص مباشر */}
           {saved && (
             <div className="mb-4 flex items-center gap-2 rounded-lg bg-success/10 p-3 text-sm text-success">
               <CheckCircle2 className="h-4 w-4" />
-              {t.admin.saved}
+              {locale === 'ar' ? '✅ تم الحفظ بنجاح' : '✅ Enregistré avec succès'}
             </div>
           )}
 
@@ -121,7 +123,7 @@ export default function ProfilePage() {
               ) : (
                 <Save className="h-4 w-4" />
               )}
-              {t.admin.save}
+              {locale === 'ar' ? '💾 حفظ' : '💾 Enregistrer'}
             </Button>
           </form>
         </Card>

@@ -11,13 +11,16 @@ export const translations = {
       news: 'الأخبار',
       contact: 'اتصل بنا',
       about: 'حول النظام',
-      admin: 'مركز التحكم',
+      admin: 'لوحة الإدارة',  // ✅ تم التعديل
       driver: 'لوحة السائق',
       profile: 'الملف الشخصي',
       login: 'تسجيل الدخول',
       logout: 'تسجيل الخروج',
     },
     auth: {
+        emailNotConfirmed: 'يرجى تأكيد بريدك الإلكتروني أولاً',
+    invalidEmail: 'البريد الإلكتروني غير صحيح',
+    passwordTooShort: 'كلمة المرور قصيرة جداً (6 أحرف على الأقل)',
       signInTitle: 'تسجيل الدخول',
       signUpTitle: 'إنشاء حساب',
       email: 'البريد الإلكتروني',
@@ -210,6 +213,8 @@ export const translations = {
       error: 'عذراً، حدث خطأ. حاول مرة أخرى.',
     },
     admin: {
+          "totalUsers": "المستخدمين", // ✅ أضف هذا السطر
+
       title: 'لوحة الإدارة',
       overview: 'نظرة عامة',
       buses: 'الحافلات',
@@ -268,15 +273,20 @@ export const translations = {
       news: 'Actualités',
       contact: 'Contact',
       about: 'À propos',
-      admin: 'Centre de Contrôle',
+      admin: 'Tableau de bord',
       driver: 'Espace Chauffeur',
       profile: 'Profil',
       login: 'Connexion',
       logout: 'Déconnexion',
-       manageLines: 'Gérer les lignes',
-  manageStations: 'Gérer les stations',
+      totalUsers: "Utilisateurs",
+      manageLines: 'Gérer les lignes',
+      manageStations: 'Gérer les stations',
     },
     auth: {
+    emailNotConfirmed: 'Veuillez confirmer votre email d\'abord',
+    invalidEmail: 'Email invalide',
+    passwordTooShort: 'Le mot de passe est trop court (6 caractères minimum)',
+
       signInTitle: 'Connexion',
       signUpTitle: 'Créer un compte',
       email: 'Email',
