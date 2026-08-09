@@ -1011,144 +1011,147 @@ const handleBusSubmit = async () => {
 
   // ============================================
   // GESTION DES DRIVERS (CRUD)
-  // ============================================
-  const handleDriverSubmit = async () => {
-    const isAuth = await checkAuth();
-    if (!isAuth) return;
 
-    const isValidEmail = (email: string) => {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      return emailRegex.test(email);
-    };
 
-    if (!driverForm.name || driverForm.name.trim().length < 2) {
-      toast({
-        title: locale === 'ar' ? 'خطأ' : 'Erreur',
-        description: locale === 'ar' ? 'الاسم يجب أن يحتوي على حرفين على الأقل' : 'Le nom doit contenir au moins 2 caractères',
-        variant: 'destructive',
-      });
-      return;
-    }
+const handleDriverSubmit = async () => {
+  const isAuth = await checkAuth();
+  if (!isAuth) return;
 
-    if (!editingDriver && !driverForm.email) {
-      toast({
-        title: locale === 'ar' ? 'خطأ' : 'Erreur',
-        description: locale === 'ar' ? 'الرجاء إدخال البريد الإلكتروني' : 'Veuillez entrer l\'email',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!editingDriver && driverForm.email && !isValidEmail(driverForm.email)) {
-      toast({
-        title: locale === 'ar' ? 'خطأ' : 'Erreur',
-        description: locale === 'ar' ? 'البريد الإلكتروني غير صحيح' : 'Email invalide',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!editingDriver && (!driverForm.password || driverForm.password.length < 6)) {
-      toast({
-        title: locale === 'ar' ? 'خطأ' : 'Erreur',
-        description: locale === 'ar' ? 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' : 'Le mot de passe doit contenir au moins 6 caractères',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (editingDriver) {
-        const { error } = await supabase
-          .from('drivers')
-          .update({
-            name: driverForm.name.trim(),
-            license_number: driverForm.license_number?.trim() || null,
-            phone: driverForm.phone?.trim() || null,
-            status: driverForm.status || 'off_duty',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', editingDriver.id);
-        
-        if (error) throw error;
-
-        await supabase
-          .from('user_profiles')
-          .update({
-            full_name: driverForm.name.trim(),
-            phone: driverForm.phone?.trim() || null,
-            role: 'driver',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('driver_id', editingDriver.id);
-
-        await logActivity(
-          'تعديل سائق',
-          user?.email || 'admin',
-          driverForm.name,
-          `تعديل بيانات السائق ${driverForm.name}`
-        );
-
-        toast({
-          title: locale === 'ar' ? '✅ تم التحديث' : '✅ Mis à jour',
-          description: `${driverForm.name} ${locale === 'ar' ? 'تم تحديثه بنجاح' : 'a été mis à jour'}`,
-        });
-        
-      } else {
-        const response = await fetch('/api/admin/drivers', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: driverForm.name.trim(),
-            email: driverForm.email.trim(),
-            password: driverForm.password,
-            license_number: driverForm.license_number?.trim() || null,
-            phone: driverForm.phone?.trim() || null,
-            status: driverForm.status || 'off_duty',
-          }),
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.error || 'حدث خطأ أثناء إضافة السائق');
-        }
-
-        await logActivity(
-          'إضافة سائق',
-          user?.email || 'admin',
-          driverForm.name,
-          `إضافة سائق جديد ${driverForm.name}`
-        );
-
-        toast({
-          title: locale === 'ar' ? '✅ تمت الإضافة' : '✅ Ajouté',
-          description: `${driverForm.name} ${locale === 'ar' ? 'تمت إضافته بنجاح كسائق' : 'a été ajouté comme chauffeur'}`,
-        });
-      }
-
-      setDriverFormOpen(false);
-      resetDriverForm();
-      await fetchData();
-
-    } catch (error: any) {
-      console.error('Error in handleDriverSubmit:', error);
-      toast({
-        title: locale === 'ar' ? 'خطأ' : 'Erreur',
-        description: error?.message || (locale === 'ar' ? 'تعذر حفظ السائق' : 'Impossible de sauvegarder le chauffeur'),
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
+  const isValidEmail = (email: string) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
   };
 
+  if (!driverForm.name || driverForm.name.trim().length < 2) {
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'الاسم يجب أن يحتوي على حرفين على الأقل' : 'Le nom doit contenir au moins 2 caractères',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  if (!editingDriver && !driverForm.email) {
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'الرجاء إدخال البريد الإلكتروني' : 'Veuillez entrer l\'email',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  if (!editingDriver && driverForm.email && !isValidEmail(driverForm.email)) {
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'البريد الإلكتروني غير صحيح' : 'Email invalide',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  if (!editingDriver && (!driverForm.password || driverForm.password.length < 6)) {
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: locale === 'ar' ? 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' : 'Le mot de passe doit contenir au moins 6 caractères',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (editingDriver) {
+      // ✅ تحديث السائق في جدول drivers
+      const { error } = await supabase
+        .from('drivers')
+        .update({
+          name: driverForm.name.trim(),
+          license_number: driverForm.license_number?.trim() || null,
+          phone: driverForm.phone?.trim() || null,
+          status: driverForm.status || 'off_duty',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingDriver.id);  // ✅ استخدام id الصحيح
+      
+      if (error) throw error;
+
+      // ✅ تحديث الملف الشخصي للمستخدم باستخدام driver_id
+      await supabase
+        .from('user_profiles')
+        .update({
+          full_name: driverForm.name.trim(),
+          phone: driverForm.phone?.trim() || null,
+          role: 'driver',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('driver_id', editingDriver.id);  // ✅ استخدام driver_id الصحيح
+
+      await logActivity(
+        'تعديل سائق',
+        user?.email || 'admin',
+        driverForm.name,
+        `تعديل بيانات السائق ${driverForm.name}`
+      );
+
+      toast({
+        title: locale === 'ar' ? '✅ تم التحديث' : '✅ Mis à jour',
+        description: `${driverForm.name} ${locale === 'ar' ? 'تم تحديثه بنجاح' : 'a été mis à jour'}`,
+      });
+      
+    } else {
+      // ✅ إضافة سائق جديد
+      const response = await fetch('/api/admin/drivers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: driverForm.name.trim(),
+          email: driverForm.email.trim(),
+          password: driverForm.password,
+          license_number: driverForm.license_number?.trim() || null,
+          phone: driverForm.phone?.trim() || null,
+          status: driverForm.status || 'off_duty',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'حدث خطأ أثناء إضافة السائق');
+      }
+
+      await logActivity(
+        'إضافة سائق',
+        user?.email || 'admin',
+        driverForm.name,
+        `إضافة سائق جديد ${driverForm.name}`
+      );
+
+      toast({
+        title: locale === 'ar' ? '✅ تمت الإضافة' : '✅ Ajouté',
+        description: `${driverForm.name} ${locale === 'ar' ? 'تمت إضافته بنجاح كسائق' : 'a été ajouté comme chauffeur'}`,
+      });
+    }
+
+    setDriverFormOpen(false);
+    resetDriverForm();
+    await fetchData();
+
+  } catch (error: any) {
+    console.error('Error in handleDriverSubmit:', error);
+    toast({
+      title: locale === 'ar' ? 'خطأ' : 'Erreur',
+      description: error?.message || (locale === 'ar' ? 'تعذر حفظ السائق' : 'Impossible de sauvegarder le chauffeur'),
+      variant: 'destructive',
+    });
+  } finally {
+    setLoading(false);
+  }
+};
   const resetDriverForm = () => {
     setEditingDriver(null);
     setDriverForm({
