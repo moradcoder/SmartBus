@@ -230,10 +230,7 @@ export default function HomePage() {
                         <div className="font-semibold text-sm truncate">
                           {locale === 'ar' ? line.name_ar : line.name_fr}
                         </div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {line.waypoints?.length || 0} {locale === 'ar' ? 'محطة' : 'stations'}
-                        </div>
+                      
                       </div>
                       <Badge variant="default" className="flex-shrink-0">
                         {locale === 'ar' ? 'نشط' : 'Actif'}
